@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AuditItem, CoreEeatDimension, ItemStatus } from "@/types/audit";
+import type { AuditItem, CoreEeatDimension, CiteDimension, ItemStatus } from "@/types/audit";
 import { CORE_EEAT_ITEMS, EXPRESS_ITEMS, type CoreEeatItemDef } from "./core-eeat-items";
+import { CITE_ITEMS, CITE_EXPRESS_ITEMS, type CiteItemDef } from "./cite-items";
 
 /**
  * Scoring CORE-EEAT via LLM.
@@ -12,13 +13,77 @@ import { CORE_EEAT_ITEMS, EXPRESS_ITEMS, type CoreEeatItemDef } from "./core-eea
  * temperature: 0 pour maximiser la reproductibilité.
  */
 
-const anthropic = new Anthropic();
+const VALID_STATUSES: ItemStatus[] = ["pass", "partial", "fail"];
+
+function validateStatus(status: unknown): ItemStatus {
+  if (typeof status === "string") {
+    const lower = status.toLowerCase().trim();
+    if (VALID_STATUSES.includes(lower as ItemStatus)) {
+      return lower as ItemStatus;
+    }
+  }
+  return "partial";
+}
+
+interface LlmScoredItem {
+  code?: string;
+  status?: string;
+  score?: number | string;
+  notes?: string;
+}
+
+function safeParseJson(text: string): LlmScoredItem[] | null {
+  // Try parsing the full text first
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed as LlmScoredItem[];
+  } catch {
+    // fall through to regex
+  }
+
+  // Try non-greedy regex extraction
+  const jsonMatch = text.match(/\[[\s\S]*?\]/);
+  if (!jsonMatch) return null;
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (Array.isArray(parsed)) return parsed as LlmScoredItem[];
+  } catch {
+    // fall through
+  }
+
+  // Try greedy as last resort (for nested arrays)
+  const greedyMatch = text.match(/\[[\s\S]*\]/);
+  if (!greedyMatch || greedyMatch[0] === jsonMatch?.[0]) return null;
+
+  try {
+    const parsed = JSON.parse(greedyMatch[0]);
+    if (Array.isArray(parsed)) return parsed as LlmScoredItem[];
+  } catch {
+    // all parsing attempts failed
+  }
+
+  return null;
+}
+
+function createAnthropicClient(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is not set");
+  }
+  return new Anthropic();
+}
 
 export async function scoreItems(
   html: string,
   url: string,
   mode: "express" | "full"
 ): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
+  if (!html || html.trim().length < 50) {
+    console.warn("[scorer] HTML trop court ou vide, scoring impossible");
+    return [];
+  }
+
   const items = mode === "express" ? EXPRESS_ITEMS : CORE_EEAT_ITEMS;
 
   // Group items by dimension
@@ -37,10 +102,19 @@ export async function scoreItems(
   );
 
   const results: Omit<AuditItem, "id" | "audit_id">[] = [];
+  let failedDimensions = 0;
+
   for (const result of dimensionResults) {
     if (result.status === "fulfilled") {
       results.push(...result.value);
+    } else {
+      failedDimensions++;
+      console.error("[scorer] Dimension scoring failed:", result.reason?.message || result.reason);
     }
+  }
+
+  if (failedDimensions > 0) {
+    console.warn(`[scorer] ${failedDimensions}/${byDimension.size} CORE-EEAT dimensions failed`);
   }
 
   return results;
@@ -93,6 +167,8 @@ Règles de scoring:
 
 Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
 
+  const anthropic = createAnthropicClient();
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 2000,
@@ -100,44 +176,39 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
     messages: [{ role: "user", content: prompt }],
   });
 
-  const text = message.content[0].type === "text" ? message.content[0].text : "";
+  const textBlock = message.content[0];
+  const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
 
-  // Parse JSON response
-  const jsonMatch = text.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    // Fallback: return items with "partial" status if parsing fails
-    return items.map((item) => ({
-      framework: "core_eeat" as const,
-      dimension: item.dimension,
-      item_code: item.code,
-      item_label: item.label,
-      status: "partial" as ItemStatus,
-      score: 50,
-      notes: "Scoring automatique non disponible — évaluation manuelle requise.",
-      is_geo_first: item.isGeoFirst,
-      is_express_item: item.isExpress,
-    }));
+  if (!text) {
+    console.warn(`[scorer] Empty response for CORE-EEAT dimension ${dimension}`);
+    return makeFallbackItems(items, "core_eeat");
   }
 
-  const parsed: Array<{
-    code: string;
-    status: string;
-    score: number;
-    notes: string;
-  }> = JSON.parse(jsonMatch[0]);
+  // Parse JSON response with robust fallbacks
+  const parsed = safeParseJson(text);
+  if (!parsed) {
+    console.warn(`[scorer] Failed to parse JSON for CORE-EEAT dimension ${dimension}`);
+    return makeFallbackItems(items, "core_eeat");
+  }
 
   // Map parsed results back to items
   return items.map((item) => {
-    const found = parsed.find((p) => p.code === item.code);
+    const found = parsed.find((p: any) => p?.code === item.code);
+
+    const score = typeof found?.score === "number"
+      ? Math.min(100, Math.max(0, Math.round(found.score)))
+      : typeof found?.score === "string"
+        ? Math.min(100, Math.max(0, Math.round(parseFloat(found.score)) || 50))
+        : 50;
 
     return {
       framework: "core_eeat" as const,
       dimension: item.dimension,
       item_code: item.code,
       item_label: item.label,
-      status: (found?.status || "partial") as ItemStatus,
-      score: Math.min(100, Math.max(0, found?.score ?? 50)),
-      notes: found?.notes || null,
+      status: validateStatus(found?.status),
+      score,
+      notes: typeof found?.notes === "string" ? found.notes : null,
       is_geo_first: item.isGeoFirst,
       is_express_item: item.isExpress,
     };
@@ -160,12 +231,156 @@ export function aggregateScores(
 
   const result: Record<string, number> = {};
   for (const [dim, scores] of byDimension) {
+    if (scores.length === 0) continue;
     result[dim] = Math.round(
       scores.reduce((a, b) => a + b, 0) / scores.length
     );
   }
 
   return result;
+}
+
+/**
+ * Scoring CITE via LLM — même approche que CORE-EEAT.
+ * 1 appel par dimension (4 dimensions), évalue la crédibilité du domaine.
+ */
+export async function scoreCiteItems(
+  html: string,
+  url: string,
+  mode: "express" | "full"
+): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
+  if (!html || html.trim().length < 50) {
+    console.warn("[scorer] HTML trop court ou vide, scoring CITE impossible");
+    return [];
+  }
+
+  const items = mode === "express" ? CITE_EXPRESS_ITEMS : CITE_ITEMS;
+
+  const byDimension = new Map<string, CiteItemDef[]>();
+  for (const item of items) {
+    const existing = byDimension.get(item.dimension) || [];
+    existing.push(item);
+    byDimension.set(item.dimension, existing);
+  }
+
+  const dimensionResults = await Promise.allSettled(
+    Array.from(byDimension.entries()).map(([dimension, dimensionItems]) =>
+      scoreCiteDimension(html, url, dimension as CiteDimension, dimensionItems)
+    )
+  );
+
+  const results: Omit<AuditItem, "id" | "audit_id">[] = [];
+  let failedDimensions = 0;
+
+  for (const result of dimensionResults) {
+    if (result.status === "fulfilled") {
+      results.push(...result.value);
+    } else {
+      failedDimensions++;
+      console.error("[scorer] CITE dimension scoring failed:", result.reason?.message || result.reason);
+    }
+  }
+
+  if (failedDimensions > 0) {
+    console.warn(`[scorer] ${failedDimensions}/${byDimension.size} CITE dimensions failed`);
+  }
+
+  return results;
+}
+
+async function scoreCiteDimension(
+  html: string,
+  url: string,
+  dimension: CiteDimension,
+  items: CiteItemDef[]
+): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
+  const truncatedHtml = html.slice(0, 50000);
+
+  const dimensionLabels: Record<string, string> = {
+    C: "Crédibilité",
+    I: "Influence",
+    T: "Confiance (Trust)",
+    E: "Engagement",
+  };
+
+  const itemsList = items
+    .map((item) => `- ${item.code}: ${item.label} — ${item.description}`)
+    .join("\n");
+
+  const prompt = `Tu es un auditeur spécialisé en crédibilité et autorité de domaine. Analyse cette page web et évalue chaque critère CITE ci-dessous.
+
+URL: ${url}
+
+HTML de la page (tronqué si nécessaire):
+\`\`\`html
+${truncatedHtml}
+\`\`\`
+
+Critères à évaluer (dimension ${dimensionLabels[dimension]} — ${dimension}):
+${itemsList}
+
+Pour CHAQUE critère, réponds en JSON avec un tableau d'objets:
+[
+  {
+    "code": "CI-C01",
+    "status": "pass" | "partial" | "fail",
+    "score": 0-100,
+    "notes": "Explication concise en français (1-2 phrases)"
+  }
+]
+
+Règles de scoring:
+- "pass" = 75-100 : le critère est pleinement satisfait
+- "partial" = 25-74 : le critère est partiellement satisfait
+- "fail" = 0-24 : le critère n'est pas satisfait
+- Sois factuel et précis. Base ton évaluation sur ce qui est observable dans le HTML et les signaux disponibles.
+
+Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
+
+  const anthropic = createAnthropicClient();
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 2000,
+    temperature: 0,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const textBlock = message.content[0];
+  const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
+
+  if (!text) {
+    console.warn(`[scorer] Empty response for CITE dimension ${dimension}`);
+    return makeFallbackItems(items.map(i => ({ ...i, isGeoFirst: false })), "cite");
+  }
+
+  const parsed = safeParseJson(text);
+  if (!parsed) {
+    console.warn(`[scorer] Failed to parse JSON for CITE dimension ${dimension}`);
+    return makeFallbackItems(items.map(i => ({ ...i, isGeoFirst: false })), "cite");
+  }
+
+  return items.map((item) => {
+    const found = parsed.find((p: any) => p?.code === item.code);
+
+    const score = typeof found?.score === "number"
+      ? Math.min(100, Math.max(0, Math.round(found.score)))
+      : typeof found?.score === "string"
+        ? Math.min(100, Math.max(0, Math.round(parseFloat(found.score)) || 50))
+        : 50;
+
+    return {
+      framework: "cite" as const,
+      dimension: item.dimension,
+      item_code: item.code,
+      item_label: item.label,
+      status: validateStatus(found?.status),
+      score,
+      notes: typeof found?.notes === "string" ? found.notes : null,
+      is_geo_first: false,
+      is_express_item: item.isExpress,
+    };
+  });
 }
 
 /**
@@ -190,4 +405,23 @@ export function calculateSeoScore(
   }
 
   return totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
+}
+
+// --- Helpers ---
+
+function makeFallbackItems(
+  items: Array<{ code: string; label: string; dimension: string; isExpress: boolean; isGeoFirst: boolean }>,
+  framework: "core_eeat" | "cite"
+): Omit<AuditItem, "id" | "audit_id">[] {
+  return items.map((item) => ({
+    framework,
+    dimension: item.dimension,
+    item_code: item.code,
+    item_label: item.label,
+    status: "partial" as ItemStatus,
+    score: 50,
+    notes: "Scoring automatique non disponible — évaluation manuelle requise.",
+    is_geo_first: item.isGeoFirst,
+    is_express_item: item.isExpress,
+  }));
 }

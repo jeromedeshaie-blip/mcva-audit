@@ -75,7 +75,8 @@ CREATE TABLE audit_items (
   score integer NOT NULL CHECK (score BETWEEN 0 AND 100),
   notes text,
   is_geo_first boolean NOT NULL DEFAULT false,
-  is_express_item boolean NOT NULL DEFAULT false
+  is_express_item boolean NOT NULL DEFAULT false,
+  UNIQUE(audit_id, item_code)
 );
 
 CREATE INDEX idx_audit_items_audit ON audit_items(audit_id);
@@ -132,8 +133,11 @@ CREATE POLICY "Authenticated users can read audits" ON audits
 CREATE POLICY "Authenticated users can insert audits" ON audits
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = created_by);
 
+-- Users can only update sector on their own audits (status managed by service_role)
 CREATE POLICY "Authenticated users can update own audits" ON audits
-  FOR UPDATE TO authenticated USING (auth.uid() = created_by);
+  FOR UPDATE TO authenticated
+  USING (auth.uid() = created_by)
+  WITH CHECK (auth.uid() = created_by);
 
 CREATE POLICY "Authenticated users can read scores" ON audit_scores
   FOR SELECT TO authenticated USING (true);

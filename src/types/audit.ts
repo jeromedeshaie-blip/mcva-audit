@@ -34,23 +34,9 @@ export interface Audit {
 
 // --- Scores ---
 
-export interface CoreEeatScores {
-  C: number;
-  O: number;
-  R: number;
-  E: number;
-  Exp: number;
-  Ept: number;
-  A: number;
-  T: number;
-}
+export type CoreEeatScores = Record<string, number>;
 
-export interface CiteScores {
-  C: number;
-  I: number;
-  T: number;
-  E: number;
-}
+export type CiteScores = Record<string, number>;
 
 export interface AuditScores {
   id: string;
@@ -114,6 +100,8 @@ export interface GeoData {
   brand_sentiment: "positive" | "neutral" | "negative" | "not_mentioned";
   citation_count: number;
   models_coverage: number; // nombre de modèles testés
+  _all_models_failed?: boolean; // true if every model API call failed
+  _errors?: string[]; // error messages when models failed
 }
 
 export interface AIModelResult {
@@ -122,6 +110,7 @@ export interface AIModelResult {
   citation_text: string | null;
   sentiment: "positive" | "neutral" | "negative" | "not_mentioned";
   context: string | null; // dans quel contexte la marque est citée
+  _actually_tested?: boolean; // false if API key was missing (won't count in scoring)
 }
 
 // --- Audit Items (CORE-EEAT / CITE) ---

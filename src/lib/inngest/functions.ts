@@ -2,17 +2,69 @@ import { inngest } from "./client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { createGeoProvider } from "@/lib/providers/geo/geo-provider";
-import { scoreItems, aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
+import { scoreItems, scoreCiteItems, aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
 import * as cheerio from "cheerio";
+
+// --- Shared helpers ---
+
+async function updateAuditStatus(auditId: string, status: string, extra?: Record<string, unknown>) {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("audits")
+    .update({ status, ...extra })
+    .eq("id", auditId);
+  if (error) {
+    console.error(`[audit:${auditId}] Failed to update status to ${status}:`, error.message);
+    throw new Error(`DB update failed: ${error.message}`);
+  }
+}
+
+async function scrapeHtml(url: string): Promise<string> {
+  const fullUrl = url.startsWith("https://") || url.startsWith("http://") ? url : `https://${url}`;
+
+  const response = await fetch(fullUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; MCVAAuditBot/1.0; +https://mcva.ch)",
+    },
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} fetching ${fullUrl}`);
+  }
+
+  const html = await response.text();
+
+  if (!html || html.length < 100) {
+    throw new Error(`Contenu HTML vide ou insuffisant pour ${fullUrl}`);
+  }
+
+  return html;
+}
 
 /**
  * Audit Express — Inngest function
  *
- * Orchestrates: HTML scraping → SEO data → GEO data → CORE-EEAT scoring (20 items) → score aggregation
+ * Steps exécutés séquentiellement pour garantir la durabilité Inngest :
+ * 1. Update status → 2. Scrape HTML → 3-6. SEO/GEO/Scoring (parallel via Promise.allSettled in step) → 7. Save
  * Duration: ~2-3 minutes
  */
 export const runExpressAudit = inngest.createFunction(
-  { id: "run-express-audit", name: "Run Express Audit", triggers: [{ event: "audit/express.requested" }] },
+  {
+    id: "run-express-audit",
+    name: "Run Express Audit",
+    triggers: [{ event: "audit/express.requested" }],
+    onFailure: async ({ event }: { event: any }) => {
+      const auditId = event.data?.event?.data?.auditId;
+      if (auditId) {
+        try {
+          await updateAuditStatus(auditId, "error");
+        } catch (e) {
+          console.error(`[audit:${auditId}] Failed to set error status on failure:`, e);
+        }
+      }
+    },
+  },
   async ({ event, step }: { event: any; step: any }) => {
     const { auditId, url, domain, sector } = event.data as {
       auditId: string;
@@ -21,60 +73,54 @@ export const runExpressAudit = inngest.createFunction(
       sector: string;
     };
 
-    const supabase = createServiceClient();
-
     // Step 1: Update status to processing
     await step.run("update-status-processing", async () => {
-      await supabase
-        .from("audits")
-        .update({ status: "processing" })
-        .eq("id", auditId);
+      await updateAuditStatus(auditId, "processing");
     });
 
     // Step 2: Scrape HTML
     const html = await step.run("scrape-html", async () => {
-      const response = await fetch(url.startsWith("http") ? url : `https://${url}`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; MCVAAuditBot/1.0; +https://mcva.ch)",
-        },
-        signal: AbortSignal.timeout(15000),
-      });
-      return response.text();
+      return scrapeHtml(url);
     });
 
-    // Step 3: Run SEO, GEO, and scoring in parallel
-    const [seoData, geoData, scoredItems] = await Promise.all([
-      step.run("fetch-seo-data", async () => {
-        const seoProvider = await createSeoProvider();
-        return seoProvider.getDomainOverview(domain);
-      }),
+    // Steps 3-6: Each step.run individually (Inngest memoization-safe)
+    const seoData = await step.run("fetch-seo-data", async () => {
+      const seoProvider = await createSeoProvider();
+      return seoProvider.getDomainOverview(domain);
+    });
 
-      step.run("fetch-geo-data", async () => {
-        const geoProvider = await createGeoProvider();
-        const brandName = extractBrandName(html, domain);
-        return geoProvider.getAIVisibility(brandName, sector || "général", domain);
-      }),
+    const geoData = await step.run("fetch-geo-data", async () => {
+      const geoProvider = await createGeoProvider();
+      const brandName = extractBrandName(html, domain);
+      return geoProvider.getAIVisibility(brandName, sector || "général", domain);
+    });
 
-      step.run("score-core-eeat-express", async () => {
-        return scoreItems(html, url, "express");
-      }),
-    ]);
+    const scoredItems = await step.run("score-core-eeat-express", async () => {
+      return scoreItems(html, url, "express");
+    });
 
-    // Step 4: Aggregate scores and save
+    const citeItems = await step.run("score-cite-express", async () => {
+      return scoreCiteItems(html, url, "express");
+    });
+
+    // Step 7: Aggregate scores and save
     await step.run("save-results", async () => {
+      const supabase = createServiceClient();
+
       const coreEeatScores = aggregateScores(scoredItems);
+      const citeScores = aggregateScores(citeItems);
       const scoreSeo = calculateSeoScore(coreEeatScores);
-      const scoreGeo = geoData.ai_visibility_score;
+      const scoreGeo = geoData.ai_visibility_score ?? 0;
 
       const seoProvider = await createSeoProvider();
 
       // Save scores
-      await supabase.from("audit_scores").insert({
+      const { error: scoresError } = await supabase.from("audit_scores").insert({
         audit_id: auditId,
         score_seo: scoreSeo,
         score_geo: scoreGeo,
         score_core_eeat: coreEeatScores,
-        score_cite: {}, // CITE scoring to be added
+        score_cite: citeScores,
         seo_provider: seoProvider.name,
         seo_data: seoData,
         geo_provider: process.env.GEO_PROVIDER || "direct_ai",
@@ -82,21 +128,36 @@ export const runExpressAudit = inngest.createFunction(
         competitors: null,
       });
 
-      // Save individual items
-      if (scoredItems.length > 0) {
-        await supabase.from("audit_items").insert(
-          scoredItems.map((item: any) => ({
+      if (scoresError) {
+        console.error(`[audit:${auditId}] Failed to insert scores:`, scoresError.message);
+        throw new Error(`DB insert scores failed: ${scoresError.message}`);
+      }
+
+      // Save individual items (CORE-EEAT + CITE)
+      const allItems = [...scoredItems, ...citeItems];
+      if (allItems.length > 0) {
+        const { error: itemsError } = await supabase.from("audit_items").insert(
+          allItems.map((item: any) => ({
             audit_id: auditId,
             ...item,
           }))
         );
+        if (itemsError) {
+          console.error(`[audit:${auditId}] Failed to insert items:`, itemsError.message);
+          throw new Error(`DB insert items failed: ${itemsError.message}`);
+        }
       }
 
       // Update audit status
-      await supabase
+      const { error: updateError } = await supabase
         .from("audits")
         .update({ status: "completed", completed_at: new Date().toISOString() })
         .eq("id", auditId);
+
+      if (updateError) {
+        console.error(`[audit:${auditId}] Failed to complete audit:`, updateError.message);
+        throw new Error(`DB update status failed: ${updateError.message}`);
+      }
     });
 
     return { auditId, status: "completed" };
@@ -110,7 +171,21 @@ export const runExpressAudit = inngest.createFunction(
  * Duration: ~5-15 minutes
  */
 export const runFullAudit = inngest.createFunction(
-  { id: "run-full-audit", name: "Run Full Audit", triggers: [{ event: "audit/full.requested" }] },
+  {
+    id: "run-full-audit",
+    name: "Run Full Audit",
+    triggers: [{ event: "audit/full.requested" }],
+    onFailure: async ({ event }: { event: any }) => {
+      const auditId = event.data?.event?.data?.auditId;
+      if (auditId) {
+        try {
+          await updateAuditStatus(auditId, "error");
+        } catch (e) {
+          console.error(`[audit:${auditId}] Failed to set error status on failure:`, e);
+        }
+      }
+    },
+  },
   async ({ event, step }: { event: any; step: any }) => {
     const { auditId, url, domain, sector } = event.data as {
       auditId: string;
@@ -119,69 +194,64 @@ export const runFullAudit = inngest.createFunction(
       sector: string;
     };
 
-    const supabase = createServiceClient();
-
     // Step 1: Update status
     await step.run("update-status-processing", async () => {
-      await supabase
-        .from("audits")
-        .update({ status: "processing" })
-        .eq("id", auditId);
+      await updateAuditStatus(auditId, "processing");
     });
 
     // Step 2: Scrape HTML
     const html = await step.run("scrape-html", async () => {
-      const response = await fetch(url.startsWith("http") ? url : `https://${url}`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; MCVAAuditBot/1.0; +https://mcva.ch)",
-        },
-        signal: AbortSignal.timeout(15000),
-      });
-      return response.text();
+      return scrapeHtml(url);
     });
 
-    // Step 3: Parallel data fetching + full scoring
-    const [seoData, geoData, competitors, scoredItems] = await Promise.all([
-      step.run("fetch-seo-data", async () => {
-        const seoProvider = await createSeoProvider();
-        return seoProvider.getDomainOverview(domain);
-      }),
+    // Steps 3-7: Each individually for Inngest durability
+    const seoData = await step.run("fetch-seo-data", async () => {
+      const seoProvider = await createSeoProvider();
+      return seoProvider.getDomainOverview(domain);
+    });
 
-      step.run("fetch-geo-data", async () => {
-        const geoProvider = await createGeoProvider();
-        const brandName = extractBrandName(html, domain);
-        return geoProvider.getAIVisibility(brandName, sector || "général", domain);
-      }),
+    const geoData = await step.run("fetch-geo-data", async () => {
+      const geoProvider = await createGeoProvider();
+      const brandName = extractBrandName(html, domain);
+      return geoProvider.getAIVisibility(brandName, sector || "général", domain);
+    });
 
-      step.run("fetch-competitors", async () => {
-        const seoProvider = await createSeoProvider();
-        return seoProvider.getCompetitors(domain);
-      }),
+    const competitors = await step.run("fetch-competitors", async () => {
+      const seoProvider = await createSeoProvider();
+      return seoProvider.getCompetitors(domain);
+    });
 
-      step.run("score-core-eeat-full", async () => {
-        return scoreItems(html, url, "full");
-      }),
-    ]);
+    const scoredItems = await step.run("score-core-eeat-full", async () => {
+      return scoreItems(html, url, "full");
+    });
 
-    // Step 4: Generate action plan
+    const citeItems = await step.run("score-cite-full", async () => {
+      return scoreCiteItems(html, url, "full");
+    });
+
+    // Step 8: Generate action plan
+    const allScoredItems = [...scoredItems, ...citeItems];
     const actions = await step.run("generate-action-plan", async () => {
-      return generateActionPlan(scoredItems, seoData, geoData, url);
+      return generateActionPlan(allScoredItems, seoData, geoData, url);
     });
 
-    // Step 5: Save all results
+    // Step 9: Save all results
     await step.run("save-results", async () => {
+      const supabase = createServiceClient();
+
       const coreEeatScores = aggregateScores(scoredItems);
+      const citeScores = aggregateScores(citeItems);
       const scoreSeo = calculateSeoScore(coreEeatScores);
-      const scoreGeo = geoData.ai_visibility_score;
+      const scoreGeo = geoData.ai_visibility_score ?? 0;
 
       const seoProvider = await createSeoProvider();
 
-      await supabase.from("audit_scores").insert({
+      const { error: scoresError } = await supabase.from("audit_scores").insert({
         audit_id: auditId,
         score_seo: scoreSeo,
         score_geo: scoreGeo,
         score_core_eeat: coreEeatScores,
-        score_cite: {},
+        score_cite: citeScores,
         seo_provider: seoProvider.name,
         seo_data: seoData,
         geo_provider: process.env.GEO_PROVIDER || "direct_ai",
@@ -189,28 +259,47 @@ export const runFullAudit = inngest.createFunction(
         competitors,
       });
 
-      if (scoredItems.length > 0) {
-        await supabase.from("audit_items").insert(
-          scoredItems.map((item: any) => ({
+      if (scoresError) {
+        console.error(`[audit:${auditId}] Failed to insert scores:`, scoresError.message);
+        throw new Error(`DB insert scores failed: ${scoresError.message}`);
+      }
+
+      // Save all items (CORE-EEAT + CITE)
+      if (allScoredItems.length > 0) {
+        const { error: itemsError } = await supabase.from("audit_items").insert(
+          allScoredItems.map((item: any) => ({
             audit_id: auditId,
             ...item,
           }))
         );
+        if (itemsError) {
+          console.error(`[audit:${auditId}] Failed to insert items:`, itemsError.message);
+          throw new Error(`DB insert items failed: ${itemsError.message}`);
+        }
       }
 
       if (actions.length > 0) {
-        await supabase.from("audit_actions").insert(
+        const { error: actionsError } = await supabase.from("audit_actions").insert(
           actions.map((action: any) => ({
             audit_id: auditId,
             ...action,
           }))
         );
+        if (actionsError) {
+          console.error(`[audit:${auditId}] Failed to insert actions:`, actionsError.message);
+          throw new Error(`DB insert actions failed: ${actionsError.message}`);
+        }
       }
 
-      await supabase
+      const { error: updateError } = await supabase
         .from("audits")
         .update({ status: "completed", completed_at: new Date().toISOString() })
         .eq("id", auditId);
+
+      if (updateError) {
+        console.error(`[audit:${auditId}] Failed to complete audit:`, updateError.message);
+        throw new Error(`DB update status failed: ${updateError.message}`);
+      }
     });
 
     return { auditId, status: "completed" };
@@ -226,22 +315,36 @@ function extractBrandName(html: string, domain: string): string {
   const siteName = $('meta[property="og:site_name"]').attr("content");
   if (siteName) return siteName;
 
-  // Try Organization schema
-  const orgSchema = $('script[type="application/ld+json"]')
-    .toArray()
-    .map((el) => {
-      try {
-        return JSON.parse($(el).html() || "");
-      } catch {
-        return null;
+  // Try Organization schema (including @graph arrays)
+  let orgName: string | null = null;
+  $('script[type="application/ld+json"]').each((_, el) => {
+    if (orgName) return;
+    try {
+      const json = JSON.parse($(el).html() || "");
+      // Direct Organization
+      if (json?.["@type"] === "Organization" && json.name) {
+        orgName = json.name;
+        return;
       }
-    })
-    .find((json) => json?.["@type"] === "Organization");
+      // @graph array
+      if (Array.isArray(json?.["@graph"])) {
+        const org = json["@graph"].find((item: any) => item?.["@type"] === "Organization" && item.name);
+        if (org) {
+          orgName = org.name;
+        }
+      }
+    } catch {
+      // ignore malformed JSON-LD
+    }
+  });
 
-  if (orgSchema?.name) return orgSchema.name;
+  if (orgName) return orgName;
 
-  // Fallback: domain without TLD
-  return domain.replace(/\.(com|fr|ch|io|org|net)$/i, "");
+  // Fallback: domain without TLD (improved regex for more TLDs)
+  return domain
+    .replace(/\.(com|fr|ch|io|org|net|de|co\.uk|co|tech|ai|dev|app|info|biz)$/i, "")
+    .replace(/\./g, " ")
+    .trim();
 }
 
 async function generateActionPlan(
@@ -274,6 +377,18 @@ async function generateActionPlan(
 }
 
 function categorizeItem(code: string): string {
+  // CITE items: CI-C01, CI-I01, CI-T01, CI-E01
+  if (code.startsWith("CI-")) {
+    const citeDim = code.charAt(3);
+    const citeMap: Record<string, string> = {
+      C: "notoriete",
+      I: "notoriete",
+      T: "contenu",
+      E: "contenu",
+    };
+    return citeMap[citeDim] || "SEO";
+  }
+  // CORE-EEAT items
   const prefix = code.replace(/\d+$/, "");
   const map: Record<string, string> = {
     C: "contenu",

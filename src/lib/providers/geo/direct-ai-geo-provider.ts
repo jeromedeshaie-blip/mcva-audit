@@ -2,14 +2,18 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { GeoProvider } from "./geo-provider";
 import type { GeoData, AIModelResult } from "@/types/audit";
 
+/** Timeout for Anthropic API calls (30s) */
+const ANTHROPIC_TIMEOUT_MS = 30000;
+
+/** Minimum brand name length to avoid false positives */
+const MIN_BRAND_LENGTH_FOR_INCLUDES = 3;
+
 /**
  * DirectAIGeoProvider — Palier 1 (Construction)
  *
- * Mesure la visibilité IA en interrogeant directement 4 modèles :
+ * Mesure la visibilité IA en interrogeant directement les modèles :
  * - Claude (Anthropic API)
  * - GPT-4o (OpenAI API)
- * - Perplexity (Perplexity API)
- * - Gemini (Google AI API)
  *
  * Pour chaque modèle, on pose 5 questions sectorielles et on détecte
  * si la marque/domaine est cité dans les réponses.
@@ -18,6 +22,12 @@ import type { GeoData, AIModelResult } from "@/types/audit";
  */
 export class DirectAIGeoProvider implements GeoProvider {
   readonly name = "direct_ai" as const;
+
+  private anthropic: Anthropic;
+
+  constructor() {
+    this.anthropic = new Anthropic();
+  }
 
   async getAIVisibility(
     brand: string,
@@ -30,30 +40,50 @@ export class DirectAIGeoProvider implements GeoProvider {
     const modelResults = await Promise.allSettled([
       this.queryClaude(brand, domain, questions),
       this.queryOpenAI(brand, domain, questions),
-      // Perplexity and Gemini can be added when API keys are available
     ]);
 
-    const results: AIModelResult[] = modelResults
-      .filter(
-        (r): r is PromiseFulfilledResult<AIModelResult> =>
-          r.status === "fulfilled"
-      )
-      .map((r) => r.value);
+    const fulfilled: AIModelResult[] = [];
+    const errors: string[] = [];
 
-    const mentionedCount = results.filter((r) => r.mentioned).length;
-    const totalModels = results.length;
+    for (const r of modelResults) {
+      if (r.status === "fulfilled") {
+        fulfilled.push(r.value);
+      } else {
+        errors.push(r.reason?.message || String(r.reason));
+      }
+    }
+
+    // If ALL models failed, flag it explicitly
+    if (fulfilled.length === 0) {
+      console.error("[GEO] All models failed:", errors);
+      return {
+        ai_visibility_score: 0,
+        models_tested: [],
+        brand_mentioned: false,
+        brand_sentiment: "not_mentioned",
+        citation_count: 0,
+        models_coverage: 0,
+        _all_models_failed: true,
+        _errors: errors,
+      } as GeoData;
+    }
+
+    // Only count models that actually returned results (not missing API key stubs)
+    const testedModels = fulfilled.filter((r) => r._actually_tested !== false);
+    const mentionedCount = testedModels.filter((r) => r.mentioned).length;
+    const totalModels = testedModels.length;
 
     // Calculate AI visibility score (0-100)
     const visibilityScore =
       totalModels > 0 ? Math.round((mentionedCount / totalModels) * 100) : 0;
 
     // Determine overall sentiment
-    const sentiments = results.map((r) => r.sentiment);
+    const sentiments = testedModels.map((r) => r.sentiment);
     const overallSentiment = determineSentiment(sentiments);
 
     return {
       ai_visibility_score: visibilityScore,
-      models_tested: results,
+      models_tested: fulfilled,
       brand_mentioned: mentionedCount > 0,
       brand_sentiment: overallSentiment,
       citation_count: mentionedCount,
@@ -68,29 +98,27 @@ export class DirectAIGeoProvider implements GeoProvider {
     sentiment: "positive" | "neutral" | "negative" | "not_mentioned";
     summary: string;
   }> {
-    const anthropic = new Anthropic();
-
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 500,
-      messages: [
-        {
-          role: "user",
-          content: `En tant qu'expert en réputation digitale, analyse la perception de la marque "${brand}" dans le secteur "${sector}".
+    try {
+      const message = await this.anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 500,
+        messages: [
+          {
+            role: "user",
+            content: `En tant qu'expert en réputation digitale, analyse la perception de la marque "${sanitizeBrandForPrompt(brand)}" dans le secteur "${sanitizeBrandForPrompt(sector)}".
 
 Réponds en JSON avec:
 - sentiment: "positive", "neutral", "negative" ou "not_mentioned"
 - summary: une phrase résumant la perception (en français)
 
 Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
-        },
-      ],
-    });
+          },
+        ],
+      });
 
-    try {
       const text =
         message.content[0].type === "text" ? message.content[0].text : "";
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const jsonMatch = text.match(/\{[\s\S]*?\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         return {
@@ -98,8 +126,8 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
           summary: parsed.summary || "Perception non déterminée.",
         };
       }
-    } catch {
-      // fallback
+    } catch (error) {
+      console.error("[GEO] getBrandPerception failed:", error);
     }
 
     return {
@@ -113,36 +141,39 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
     domain: string,
     questions: string[]
   ): Promise<AIModelResult> {
-    const anthropic = new Anthropic();
-
     const prompt = questions
       .map((q, i) => `Question ${i + 1}: ${q}`)
       .join("\n");
 
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      messages: [
-        {
-          role: "user",
-          content: `Réponds à ces questions de manière concise et factuelle:\n\n${prompt}`,
-        },
-      ],
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ANTHROPIC_TIMEOUT_MS);
 
-    const text =
-      message.content[0].type === "text" ? message.content[0].text : "";
-    const mentioned =
-      text.toLowerCase().includes(brand.toLowerCase()) ||
-      text.toLowerCase().includes(domain.toLowerCase());
+    try {
+      const message = await this.anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1500,
+        messages: [
+          {
+            role: "user",
+            content: `Réponds à ces questions de manière concise et factuelle:\n\n${prompt}`,
+          },
+        ],
+      });
 
-    return {
-      model: "claude",
-      mentioned,
-      citation_text: mentioned ? extractCitation(text, brand, domain) : null,
-      sentiment: mentioned ? analyzeSentiment(text, brand) : "not_mentioned",
-      context: mentioned ? extractContext(text, brand, domain) : null,
-    };
+      const text =
+        message.content[0].type === "text" ? message.content[0].text : "";
+      const mentioned = isBrandMentioned(text, brand, domain);
+
+      return {
+        model: "claude",
+        mentioned,
+        citation_text: mentioned ? extractCitation(text, brand, domain) : null,
+        sentiment: mentioned ? analyzeSentiment(text, brand) : "not_mentioned",
+        context: mentioned ? extractContext(text, brand, domain) : null,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async queryOpenAI(
@@ -152,13 +183,15 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
   ): Promise<AIModelResult> {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
+      // Return a result flagged as not actually tested (won't count in scoring)
       return {
         model: "gpt-4o",
         mentioned: false,
         citation_text: null,
         sentiment: "not_mentioned",
         context: null,
-      };
+        _actually_tested: false,
+      } as AIModelResult;
     }
 
     const prompt = questions
@@ -191,9 +224,7 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || "";
-    const mentioned =
-      text.toLowerCase().includes(brand.toLowerCase()) ||
-      text.toLowerCase().includes(domain.toLowerCase());
+    const mentioned = isBrandMentioned(text, brand, domain);
 
     return {
       model: "gpt-4o",
@@ -207,13 +238,48 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
 
 // --- Helpers ---
 
+/**
+ * Sanitize user input before injection into LLM prompts.
+ * Strips control characters and truncates to 100 chars.
+ */
+function sanitizeBrandForPrompt(input: string): string {
+  return input
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .slice(0, 100)
+    .trim();
+}
+
+/**
+ * Detect brand mention with word-boundary matching for short brand names.
+ */
+function isBrandMentioned(text: string, brand: string, domain: string): boolean {
+  const lowerText = text.toLowerCase();
+  const lowerDomain = domain.toLowerCase();
+
+  // Domain check (always includes-based, domains are unique enough)
+  if (lowerText.includes(lowerDomain)) return true;
+
+  // Brand check with word boundaries for short names
+  const lowerBrand = brand.toLowerCase();
+  if (lowerBrand.length < MIN_BRAND_LENGTH_FOR_INCLUDES) {
+    // Use word boundary regex for very short brands
+    const escaped = lowerBrand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`\\b${escaped}\\b`, "i");
+    return regex.test(text);
+  }
+
+  return lowerText.includes(lowerBrand);
+}
+
 function generateSectorQuestions(brand: string, sector: string): string[] {
+  const safeBrand = sanitizeBrandForPrompt(brand);
+  const safeSector = sanitizeBrandForPrompt(sector);
   return [
-    `Quelles sont les meilleures entreprises dans le secteur ${sector} en France ?`,
-    `Qui sont les leaders du ${sector} en Suisse et en France ?`,
-    `Recommande-moi une entreprise de ${sector} fiable et reconnue.`,
-    `Que penses-tu de ${brand} dans le secteur ${sector} ?`,
-    `Quels sont les acteurs innovants du ${sector} ?`,
+    `Quelles sont les meilleures entreprises dans le secteur ${safeSector} en France ?`,
+    `Qui sont les leaders du ${safeSector} en Suisse et en France ?`,
+    `Recommande-moi une entreprise de ${safeSector} fiable et reconnue.`,
+    `Que penses-tu de ${safeBrand} dans le secteur ${safeSector} ?`,
+    `Quels sont les acteurs innovants du ${safeSector} ?`,
   ];
 }
 

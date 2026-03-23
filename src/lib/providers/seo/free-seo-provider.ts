@@ -4,6 +4,35 @@ import * as cheerio from "cheerio";
 
 const PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
+/** Max HTML response size: 5 MB */
+const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
+
+/** Blocked hosts for SSRF protection */
+const BLOCKED_HOSTS = [
+  /^localhost$/i,
+  /^127\.\d+\.\d+\.\d+$/,
+  /^10\.\d+\.\d+\.\d+$/,
+  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
+  /^192\.168\.\d+\.\d+$/,
+  /^169\.254\.\d+\.\d+$/,
+  /^0\.0\.0\.0$/,
+  /^\[?::1\]?$/,
+  /^\[?fe80:/i,
+  /^\[?fd/i,
+  /^\[?fc/i,
+  /metadata\.google\.internal/i,
+];
+
+function isBlockedUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname;
+    return BLOCKED_HOSTS.some((pattern) => pattern.test(hostname));
+  } catch {
+    return true; // block unparseable URLs
+  }
+}
+
 /**
  * FreeSeoProvider — Palier 1 (Construction)
  *
@@ -18,7 +47,13 @@ export class FreeSeoProvider implements SeoProvider {
   readonly name = "free" as const;
 
   async getDomainOverview(domain: string): Promise<SeoData> {
-    const url = domain.startsWith("http") ? domain : `https://${domain}`;
+    const url = domain.startsWith("https://") || domain.startsWith("http://")
+      ? domain
+      : `https://${domain}`;
+
+    if (isBlockedUrl(url)) {
+      throw new Error(`URL bloquée pour raisons de sécurité : ${url}`);
+    }
 
     const [htmlData, pageSpeedData] = await Promise.allSettled([
       this.analyzeHTML(url),
@@ -60,11 +95,16 @@ export class FreeSeoProvider implements SeoProvider {
   }
 
   private async analyzeHTML(url: string): Promise<HtmlAnalysis> {
+    if (isBlockedUrl(url)) {
+      throw new Error(`URL bloquée pour raisons de sécurité : ${url}`);
+    }
+
     const response = await fetch(url, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (compatible; MCVAAuditBot/1.0; +https://mcva.ch)",
       },
+      redirect: "follow",
       signal: AbortSignal.timeout(15000),
     });
 
@@ -72,7 +112,35 @@ export class FreeSeoProvider implements SeoProvider {
       throw new Error(`HTTP ${response.status} fetching ${url}`);
     }
 
-    const html = await response.text();
+    // Check Content-Length header if available
+    const contentLength = response.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+      throw new Error(`Réponse trop volumineuse (${contentLength} octets, max: ${MAX_RESPONSE_SIZE})`);
+    }
+
+    // Read body with size limit
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Impossible de lire la réponse");
+    }
+
+    const chunks: Uint8Array[] = [];
+    let totalSize = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalSize += value.byteLength;
+      if (totalSize > MAX_RESPONSE_SIZE) {
+        reader.cancel();
+        throw new Error(`Réponse trop volumineuse (>${MAX_RESPONSE_SIZE} octets)`);
+      }
+      chunks.push(value);
+    }
+
+    const html = new TextDecoder().decode(
+      Buffer.concat(chunks)
+    );
     const $ = cheerio.load(html);
 
     const baseUrl = new URL(url);
@@ -82,8 +150,12 @@ export class FreeSeoProvider implements SeoProvider {
     $("a[href]").each((_, el) => {
       const href = $(el).attr("href");
       if (!href) return;
+      // Skip non-HTTP protocols
+      if (/^(javascript|mailto|tel|data|blob):/i.test(href)) return;
+      if (href.startsWith("#")) return;
       try {
         const linkUrl = new URL(href, url);
+        if (linkUrl.protocol !== "http:" && linkUrl.protocol !== "https:") return;
         if (linkUrl.hostname === baseUrl.hostname) {
           internalLinks++;
         } else {
