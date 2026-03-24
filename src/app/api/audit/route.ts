@@ -31,11 +31,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Body JSON invalide" }, { status: 400 });
   }
 
-  const { url, sector, type = "express", parent_audit_id } = body as {
+  const { url, sector, type = "express", parent_audit_id, quality = "standard" } = body as {
     url: string;
     sector?: string;
     type?: "express" | "full";
     parent_audit_id?: string;
+    quality?: "eco" | "standard" | "premium";
   };
 
   // Input validation
@@ -53,6 +54,10 @@ export async function POST(request: NextRequest) {
 
   if (type && !["express", "full"].includes(type)) {
     return NextResponse.json({ error: "Type d'audit invalide" }, { status: 400 });
+  }
+
+  if (quality && !["eco", "standard", "premium"].includes(quality)) {
+    return NextResponse.json({ error: "Niveau de qualité invalide" }, { status: 400 });
   }
 
   // Extract domain from URL
@@ -119,6 +124,7 @@ export async function POST(request: NextRequest) {
         url: audit.url,
         domain: audit.domain,
         sector: audit.sector,
+        quality: quality || "standard",
       },
     });
   } catch (inngestError) {

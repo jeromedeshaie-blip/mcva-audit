@@ -27,3 +27,34 @@ export const AUDIT_ITEM_COUNTS = {
   express: { core_eeat: 20, cite: 10, total: 30 },
   full: { core_eeat: 80, cite: 40, total: 120 },
 } as const;
+
+/** Quality levels for audit */
+export const QUALITY_LEVELS = [
+  { value: "eco", label: "Éco (test)", description: "Haiku + 1 modèle GEO — ~$0.03", icon: "⚡" },
+  { value: "standard", label: "Standard", description: "Sonnet + 2 modèles GEO — ~$0.30", icon: "⚖️" },
+  { value: "premium", label: "Premium (client)", description: "Sonnet + 4 modèles GEO — ~$0.50", icon: "💎" },
+] as const;
+
+/** Quality level configuration */
+export const QUALITY_CONFIG = {
+  eco: {
+    scoringModel: "claude-haiku-4-20250404" as const,
+    htmlMaxChars: 20000,
+    geoModels: ["claude"] as const,
+    maxTokensScoring: 1500,
+  },
+  standard: {
+    scoringModel: "claude-sonnet-4-6" as const,
+    htmlMaxChars: 50000,
+    geoModels: ["claude", "openai"] as const,
+    maxTokensScoring: 2000,
+  },
+  premium: {
+    scoringModel: "claude-sonnet-4-6" as const,
+    htmlMaxChars: 50000,
+    geoModels: ["claude", "openai", "perplexity", "gemini"] as const,
+    maxTokensScoring: 2000,
+  },
+} as const;
+
+export type QualityConfig = typeof QUALITY_CONFIG[keyof typeof QUALITY_CONFIG];

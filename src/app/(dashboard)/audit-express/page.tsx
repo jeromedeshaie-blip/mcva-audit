@@ -16,7 +16,8 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { AuditResults } from "@/components/audit/audit-results";
 import type { AuditScores, AuditItem, AuditAction } from "@/types/audit";
-import { SECTORS, POLLING_TIMEOUT_MS } from "@/lib/constants";
+import { SECTORS, POLLING_TIMEOUT_MS, QUALITY_LEVELS } from "@/lib/constants";
+import type { QualityLevel } from "@/types/audit";
 
 type AuditState = "idle" | "loading" | "polling" | "completed" | "error";
 
@@ -24,6 +25,7 @@ export default function AuditExpressPage() {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [sector, setSector] = useState("");
+  const [quality, setQuality] = useState<QualityLevel>("eco");
   const [state, setState] = useState<AuditState>("idle");
   const [progress, setProgress] = useState(0);
   const [auditId, setAuditId] = useState<string | null>(null);
@@ -50,7 +52,7 @@ export default function AuditExpressPage() {
       const res = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, sector, type: "express" }),
+        body: JSON.stringify({ url, sector, type: "express", quality }),
       });
 
       if (!res.ok) {
@@ -114,7 +116,7 @@ export default function AuditExpressPage() {
   const handleLaunchFull = async () => {
     if (!url) return;
     router.push(
-      `/audit-complet?url=${encodeURIComponent(url)}&sector=${encodeURIComponent(sector)}&from=${auditId}`
+      `/audit-complet?url=${encodeURIComponent(url)}&sector=${encodeURIComponent(sector)}&quality=${quality}&from=${auditId}`
     );
   };
 
@@ -161,6 +163,34 @@ export default function AuditExpressPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            {/* Quality level selector */}
+            <div className="space-y-2">
+              <Label>Niveau de qualite</Label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {QUALITY_LEVELS.map((q) => (
+                  <button
+                    key={q.value}
+                    type="button"
+                    onClick={() => setQuality(q.value as QualityLevel)}
+                    disabled={state === "loading" || state === "polling"}
+                    className={`rounded-lg border-2 p-3 text-left transition-colors ${
+                      quality === q.value
+                        ? "border-primary bg-primary/5"
+                        : "border-muted hover:border-muted-foreground/30"
+                    } ${state === "loading" || state === "polling" ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <div className="flex items-center gap-2 font-medium text-sm">
+                      <span>{q.icon}</span>
+                      <span>{q.label}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {q.description}
+                    </p>
+                  </button>
+                ))}
               </div>
             </div>
 

@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AuditItem, CoreEeatDimension, CiteDimension, ItemStatus } from "@/types/audit";
+import type { AuditItem, CoreEeatDimension, CiteDimension, ItemStatus, QualityLevel } from "@/types/audit";
 import { CORE_EEAT_ITEMS, EXPRESS_ITEMS, type CoreEeatItemDef } from "./core-eeat-items";
 import { CITE_ITEMS, CITE_EXPRESS_ITEMS, type CiteItemDef } from "./cite-items";
+import { QUALITY_CONFIG } from "@/lib/constants";
 
 /**
  * Scoring CORE-EEAT via LLM.
@@ -77,7 +78,8 @@ function createAnthropicClient(): Anthropic {
 export async function scoreItems(
   html: string,
   url: string,
-  mode: "express" | "full"
+  mode: "express" | "full",
+  quality: QualityLevel = "standard"
 ): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
   if (!html || html.trim().length < 50) {
     console.warn("[scorer] HTML trop court ou vide, scoring impossible");
@@ -95,9 +97,10 @@ export async function scoreItems(
   }
 
   // Score each dimension in parallel
+  const config = QUALITY_CONFIG[quality];
   const dimensionResults = await Promise.allSettled(
     Array.from(byDimension.entries()).map(([dimension, dimensionItems]) =>
-      scoreDimension(html, url, dimension as CoreEeatDimension, dimensionItems)
+      scoreDimension(html, url, dimension as CoreEeatDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring)
     )
   );
 
@@ -124,10 +127,12 @@ async function scoreDimension(
   html: string,
   url: string,
   dimension: CoreEeatDimension,
-  items: CoreEeatItemDef[]
+  items: CoreEeatItemDef[],
+  model: string = "claude-sonnet-4-6",
+  htmlMaxChars: number = 50000,
+  maxTokens: number = 2000
 ): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
-  // Truncate HTML to avoid exceeding context limits (~50k chars)
-  const truncatedHtml = html.slice(0, 50000);
+  const truncatedHtml = html.slice(0, htmlMaxChars);
 
   const itemsList = items
     .map(
@@ -170,8 +175,8 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
   const anthropic = createAnthropicClient();
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2000,
+    model,
+    max_tokens: maxTokens,
     temperature: 0,
     messages: [{ role: "user", content: prompt }],
   });
@@ -180,7 +185,7 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
   const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
 
   if (!text) {
-    console.warn(`[scorer] Empty response for CORE-EEAT dimension ${dimension}`);
+    console.warn(`[scorer] Empty response for CORE-EEAT dimension ${dimension} (model: ${model})`);
     return makeFallbackItems(items, "core_eeat");
   }
 
@@ -247,7 +252,8 @@ export function aggregateScores(
 export async function scoreCiteItems(
   html: string,
   url: string,
-  mode: "express" | "full"
+  mode: "express" | "full",
+  quality: QualityLevel = "standard"
 ): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
   if (!html || html.trim().length < 50) {
     console.warn("[scorer] HTML trop court ou vide, scoring CITE impossible");
@@ -263,9 +269,10 @@ export async function scoreCiteItems(
     byDimension.set(item.dimension, existing);
   }
 
+  const config = QUALITY_CONFIG[quality];
   const dimensionResults = await Promise.allSettled(
     Array.from(byDimension.entries()).map(([dimension, dimensionItems]) =>
-      scoreCiteDimension(html, url, dimension as CiteDimension, dimensionItems)
+      scoreCiteDimension(html, url, dimension as CiteDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring)
     )
   );
 
@@ -292,9 +299,12 @@ async function scoreCiteDimension(
   html: string,
   url: string,
   dimension: CiteDimension,
-  items: CiteItemDef[]
+  items: CiteItemDef[],
+  model: string = "claude-sonnet-4-6",
+  htmlMaxChars: number = 50000,
+  maxTokens: number = 2000
 ): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
-  const truncatedHtml = html.slice(0, 50000);
+  const truncatedHtml = html.slice(0, htmlMaxChars);
 
   const dimensionLabels: Record<string, string> = {
     C: "Crédibilité",
@@ -340,8 +350,8 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
   const anthropic = createAnthropicClient();
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2000,
+    model,
+    max_tokens: maxTokens,
     temperature: 0,
     messages: [{ role: "user", content: prompt }],
   });
@@ -350,7 +360,7 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
   const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
 
   if (!text) {
-    console.warn(`[scorer] Empty response for CITE dimension ${dimension}`);
+    console.warn(`[scorer] Empty response for CITE dimension ${dimension} (model: ${model})`);
     return makeFallbackItems(items.map(i => ({ ...i, isGeoFirst: false })), "cite");
   }
 

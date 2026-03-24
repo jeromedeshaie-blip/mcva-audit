@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { GeoProvider } from "./geo-provider";
-import type { GeoData, AIModelResult } from "@/types/audit";
+import type { GeoData, AIModelResult, QualityLevel } from "@/types/audit";
+import { QUALITY_CONFIG } from "@/lib/constants";
 
 /** Timeout for Anthropic API calls (30s) */
 const ANTHROPIC_TIMEOUT_MS = 30000;
@@ -32,15 +33,32 @@ export class DirectAIGeoProvider implements GeoProvider {
   async getAIVisibility(
     brand: string,
     sector: string,
-    domain: string
+    domain: string,
+    quality: QualityLevel = "standard"
   ): Promise<GeoData> {
     const questions = generateSectorQuestions(brand, sector);
+    const config = QUALITY_CONFIG[quality];
 
-    // Query available models in parallel
-    const modelResults = await Promise.allSettled([
-      this.queryClaude(brand, domain, questions),
-      this.queryOpenAI(brand, domain, questions),
-    ]);
+    // Build model queries based on quality level
+    const queries: Promise<AIModelResult>[] = [];
+    for (const model of config.geoModels) {
+      switch (model) {
+        case "claude":
+          queries.push(this.queryClaude(brand, domain, questions));
+          break;
+        case "openai":
+          queries.push(this.queryOpenAI(brand, domain, questions));
+          break;
+        case "perplexity":
+          queries.push(this.queryPerplexity(brand, domain, questions));
+          break;
+        case "gemini":
+          queries.push(this.queryGemini(brand, domain, questions));
+          break;
+      }
+    }
+
+    const modelResults = await Promise.allSettled(queries);
 
     const fulfilled: AIModelResult[] = [];
     const errors: string[] = [];
@@ -236,6 +254,93 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
 
     return {
       model: "gpt-4o",
+      mentioned,
+      citation_text: mentioned ? extractCitation(text, brand, domain) : null,
+      sentiment: mentioned ? analyzeSentiment(text, brand) : "not_mentioned",
+      context: mentioned ? extractContext(text, brand, domain) : null,
+      quality_score: qualityAnalysis?.score ?? 0,
+      mention_position: qualityAnalysis?.position ?? "not_mentioned",
+      is_recommended: qualityAnalysis?.isRecommended ?? false,
+    };
+  }
+
+  private async queryPerplexity(
+    brand: string,
+    domain: string,
+    questions: string[]
+  ): Promise<AIModelResult> {
+    const apiKey = process.env.PERPLEXITY_API_KEY;
+    if (!apiKey) {
+      return { model: "perplexity", mentioned: false, citation_text: null, sentiment: "not_mentioned", context: null, quality_score: 0, mention_position: "not_mentioned", is_recommended: false, _actually_tested: false } as AIModelResult;
+    }
+
+    const prompt = questions.map((q, i) => `Question ${i + 1}: ${q}`).join("\n");
+
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "sonar",
+        messages: [{ role: "user", content: `Réponds à ces questions de manière concise et factuelle:\n\n${prompt}` }],
+        max_tokens: 1500,
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) throw new Error(`Perplexity API error: ${response.status}`);
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || "";
+    const mentioned = isBrandMentioned(text, brand, domain);
+    const qualityAnalysis = mentioned ? analyzeQuality(text, brand, domain) : null;
+
+    return {
+      model: "perplexity",
+      mentioned,
+      citation_text: mentioned ? extractCitation(text, brand, domain) : null,
+      sentiment: mentioned ? analyzeSentiment(text, brand) : "not_mentioned",
+      context: mentioned ? extractContext(text, brand, domain) : null,
+      quality_score: qualityAnalysis?.score ?? 0,
+      mention_position: qualityAnalysis?.position ?? "not_mentioned",
+      is_recommended: qualityAnalysis?.isRecommended ?? false,
+    };
+  }
+
+  private async queryGemini(
+    brand: string,
+    domain: string,
+    questions: string[]
+  ): Promise<AIModelResult> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return { model: "gemini", mentioned: false, citation_text: null, sentiment: "not_mentioned", context: null, quality_score: 0, mention_position: "not_mentioned", is_recommended: false, _actually_tested: false } as AIModelResult;
+    }
+
+    const prompt = questions.map((q, i) => `Question ${i + 1}: ${q}`).join("\n");
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `Réponds à ces questions de manière concise et factuelle:\n\n${prompt}` }] }],
+          generationConfig: { maxOutputTokens: 1500, temperature: 0 },
+        }),
+        signal: AbortSignal.timeout(30000),
+      }
+    );
+
+    if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const mentioned = isBrandMentioned(text, brand, domain);
+    const qualityAnalysis = mentioned ? analyzeQuality(text, brand, domain) : null;
+
+    return {
+      model: "gemini",
       mentioned,
       citation_text: mentioned ? extractCitation(text, brand, domain) : null,
       sentiment: mentioned ? analyzeSentiment(text, brand) : "not_mentioned",

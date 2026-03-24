@@ -1,4 +1,4 @@
-import type { GeoData } from "@/types/audit";
+import type { GeoData, QualityLevel } from "@/types/audit";
 
 /**
  * Interface abstraite pour les providers GEO (visibilité IA).
@@ -16,7 +16,7 @@ export interface GeoProvider {
    * Mesure la visibilité d'une marque dans les réponses des moteurs IA.
    * Pose des questions sectorielles et détecte si la marque est citée.
    */
-  getAIVisibility(brand: string, sector: string, domain: string): Promise<GeoData>;
+  getAIVisibility(brand: string, sector: string, domain: string, quality?: QualityLevel): Promise<GeoData>;
 
   /**
    * Analyse la perception de la marque par les IA.

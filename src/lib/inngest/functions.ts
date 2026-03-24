@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { createGeoProvider } from "@/lib/providers/geo/geo-provider";
 import { scoreItems, scoreCiteItems, aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
+import type { QualityLevel } from "@/types/audit";
 import * as cheerio from "cheerio";
 
 // --- Shared helpers ---
@@ -66,12 +67,14 @@ export const runExpressAudit = inngest.createFunction(
     },
   },
   async ({ event, step }: { event: any; step: any }) => {
-    const { auditId, url, domain, sector } = event.data as {
+    const { auditId, url, domain, sector, quality: rawQuality } = event.data as {
       auditId: string;
       url: string;
       domain: string;
       sector: string;
+      quality?: string;
     };
+    const quality = (rawQuality || "standard") as QualityLevel;
 
     // Step 1: Update status to processing
     await step.run("update-status-processing", async () => {
@@ -92,15 +95,15 @@ export const runExpressAudit = inngest.createFunction(
     const geoData = await step.run("fetch-geo-data", async () => {
       const geoProvider = await createGeoProvider();
       const brandName = extractBrandName(html, domain);
-      return geoProvider.getAIVisibility(brandName, sector || "général", domain);
+      return geoProvider.getAIVisibility(brandName, sector || "général", domain, quality);
     });
 
     const scoredItems = await step.run("score-core-eeat-express", async () => {
-      return scoreItems(html, url, "express");
+      return scoreItems(html, url, "express", quality);
     });
 
     const citeItems = await step.run("score-cite-express", async () => {
-      return scoreCiteItems(html, url, "express");
+      return scoreCiteItems(html, url, "express", quality);
     });
 
     // Step 7: Aggregate scores and save
@@ -187,12 +190,14 @@ export const runFullAudit = inngest.createFunction(
     },
   },
   async ({ event, step }: { event: any; step: any }) => {
-    const { auditId, url, domain, sector } = event.data as {
+    const { auditId, url, domain, sector, quality: rawQuality } = event.data as {
       auditId: string;
       url: string;
       domain: string;
       sector: string;
+      quality?: string;
     };
+    const quality = (rawQuality || "standard") as QualityLevel;
 
     // Step 1: Update status
     await step.run("update-status-processing", async () => {
@@ -213,7 +218,7 @@ export const runFullAudit = inngest.createFunction(
     const geoData = await step.run("fetch-geo-data", async () => {
       const geoProvider = await createGeoProvider();
       const brandName = extractBrandName(html, domain);
-      return geoProvider.getAIVisibility(brandName, sector || "général", domain);
+      return geoProvider.getAIVisibility(brandName, sector || "général", domain, quality);
     });
 
     const competitors = await step.run("fetch-competitors", async () => {
@@ -222,11 +227,11 @@ export const runFullAudit = inngest.createFunction(
     });
 
     const scoredItems = await step.run("score-core-eeat-full", async () => {
-      return scoreItems(html, url, "full");
+      return scoreItems(html, url, "full", quality);
     });
 
     const citeItems = await step.run("score-cite-full", async () => {
-      return scoreCiteItems(html, url, "full");
+      return scoreCiteItems(html, url, "full", quality);
     });
 
     // Step 8: Generate action plan
