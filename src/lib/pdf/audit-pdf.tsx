@@ -5,28 +5,12 @@ import {
   Text,
   View,
   StyleSheet,
-  Font,
 } from "@react-pdf/renderer";
 import type { Audit, AuditScores, AuditItem } from "@/types/audit";
 
-// Register Work Sans font (MCVA brand)
-Font.register({
-  family: "Work Sans",
-  fonts: [
-    {
-      src: "https://fonts.gstatic.com/s/worksans/v19/QGY_z_wNahGAdqQ43RhVcIgYT2Xz5u32K0nXNi8.ttf",
-      fontWeight: 400,
-    },
-    {
-      src: "https://fonts.gstatic.com/s/worksans/v19/QGY_z_wNahGAdqQ43RhVcIgYT2Xz5u32K3vXNi8.ttf",
-      fontWeight: 600,
-    },
-    {
-      src: "https://fonts.gstatic.com/s/worksans/v19/QGY_z_wNahGAdqQ43RhVcIgYT2Xz5u32K0LXNi8.ttf",
-      fontWeight: 700,
-    },
-  ],
-});
+// Use Helvetica (built-in) to avoid font download timeouts on serverless
+// TODO: Switch to Work Sans when hosting fonts locally in /public
+const FONT_FAMILY = "Helvetica";
 
 // MCVA Brand colors
 const MCVA = {
@@ -43,7 +27,7 @@ const MCVA = {
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: "Work Sans",
+    fontFamily: FONT_FAMILY,
     fontSize: 10,
     color: MCVA.black,
     paddingTop: 60,
