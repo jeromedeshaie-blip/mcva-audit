@@ -20,20 +20,32 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      setError("Email ou mot de passe incorrect.");
+      if (error) {
+        setError(`Erreur: ${error.message}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!data.user) {
+        setError("Aucun utilisateur retourné");
+        setLoading(false);
+        return;
+      }
+
+      router.push("/audit-express");
+      router.refresh();
+    } catch (err) {
+      setError(`Exception: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    router.push("/audit-express");
-    setLoading(false);
   };
 
   return (
