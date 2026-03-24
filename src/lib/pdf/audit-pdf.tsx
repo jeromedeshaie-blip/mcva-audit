@@ -6,7 +6,7 @@ import {
   View,
   StyleSheet,
 } from "@react-pdf/renderer";
-import type { Audit, AuditScores, AuditItem } from "@/types/audit";
+import type { Audit, AuditScores, AuditItem, AuditAction } from "@/types/audit";
 
 // Use Helvetica (built-in) to avoid font download timeouts on serverless
 // TODO: Switch to Work Sans when hosting fonts locally in /public
@@ -207,6 +207,83 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: MCVA.gray,
   },
+  // Action Plan
+  actionCard: {
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+    backgroundColor: MCVA.white,
+  },
+  actionHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    marginBottom: 6,
+    gap: 8,
+  },
+  actionPriorityBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 3,
+    fontSize: 7,
+    fontWeight: 700,
+    color: MCVA.white,
+  },
+  actionTitle: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: MCVA.black,
+    flex: 1,
+  },
+  actionDescription: {
+    fontSize: 8.5,
+    color: "#374151",
+    lineHeight: 1.4,
+    marginBottom: 6,
+  },
+  actionMeta: {
+    flexDirection: "row" as const,
+    gap: 16,
+    marginTop: 4,
+  },
+  actionMetaItem: {
+    fontSize: 7.5,
+    color: MCVA.gray,
+  },
+  actionMetaValue: {
+    fontWeight: 700,
+    color: MCVA.black,
+  },
+  actionCategoryBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 3,
+    fontSize: 7,
+    backgroundColor: MCVA.lightGray,
+    color: MCVA.gray,
+  },
+  // Summary box for action plan header
+  actionSummaryBox: {
+    flexDirection: "row" as const,
+    justifyContent: "space-between" as const,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: MCVA.lightGray,
+    borderRadius: 6,
+  },
+  actionSummaryItem: {
+    alignItems: "center" as const,
+  },
+  actionSummaryNumber: {
+    fontSize: 18,
+    fontWeight: 700,
+  },
+  actionSummaryLabel: {
+    fontSize: 7.5,
+    color: MCVA.gray,
+    marginTop: 2,
+  },
 });
 
 function getScoreColor(score: number): string {
@@ -241,13 +318,36 @@ const CITE_LABELS: Record<string, string> = {
   E: "Engagement",
 };
 
+const PRIORITY_COLORS: Record<string, string> = {
+  P1: "#DC2626", // red
+  P2: "#EA580C", // orange
+  P3: "#D97706", // amber
+  P4: "#6B7280", // gray
+};
+
+const PRIORITY_LABELS: Record<string, string> = {
+  P1: "CRITIQUE",
+  P2: "IMPORTANT",
+  P3: "RECOMMANDE",
+  P4: "OPTIMISATION",
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  technique: "Technique",
+  contenu: "Contenu",
+  GEO: "GEO / IA",
+  notoriete: "Notoriete",
+  SEO: "SEO",
+};
+
 interface AuditPdfProps {
   audit: Audit;
   scores: AuditScores;
   items: AuditItem[];
+  actions?: AuditAction[];
 }
 
-export function AuditPdfDocument({ audit, scores, items }: AuditPdfProps) {
+export function AuditPdfDocument({ audit, scores, items, actions = [] }: AuditPdfProps) {
   const date = new Date(audit.created_at).toLocaleDateString("fr-FR", {
     day: "numeric",
     month: "long",
@@ -522,6 +622,94 @@ export function AuditPdfDocument({ audit, scores, items }: AuditPdfProps) {
           />
         </View>
       </Page>
+
+      {/* Action Plan — Page 2+ (full audit only) */}
+      {!isExpress && actions.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.logo}>
+              <View style={styles.logoMark}>
+                <Text style={{ color: MCVA.white, fontSize: 14, fontWeight: 700 }}>+</Text>
+              </View>
+              <Text style={styles.logoText}>MCVA Consulting</Text>
+            </View>
+            <Text style={styles.headerDate}>{date}</Text>
+          </View>
+          <View style={styles.accentBar} />
+
+          <Text style={styles.title}>Plan d'action</Text>
+          <Text style={styles.subtitle}>
+            {audit.domain} — {actions.length} recommandations priorisees
+          </Text>
+
+          {/* Summary counters */}
+          <View style={styles.actionSummaryBox}>
+            {(["P1", "P2", "P3", "P4"] as const).map((p) => {
+              const count = actions.filter((a) => a.priority === p).length;
+              return (
+                <View key={p} style={styles.actionSummaryItem}>
+                  <Text style={[styles.actionSummaryNumber, { color: PRIORITY_COLORS[p] }]}>
+                    {count}
+                  </Text>
+                  <Text style={styles.actionSummaryLabel}>{PRIORITY_LABELS[p]}</Text>
+                </View>
+              );
+            })}
+            <View style={styles.actionSummaryItem}>
+              <Text style={[styles.actionSummaryNumber, { color: MCVA.green }]}>
+                +{actions.reduce((sum, a) => sum + a.impact_points, 0)}
+              </Text>
+              <Text style={styles.actionSummaryLabel}>POINTS POTENTIELS</Text>
+            </View>
+          </View>
+
+          {/* Action cards */}
+          {actions.map((action, idx) => (
+            <View
+              key={action.id || idx}
+              style={styles.actionCard}
+              wrap={false}
+            >
+              <View style={styles.actionHeader}>
+                <Text
+                  style={[
+                    styles.actionPriorityBadge,
+                    { backgroundColor: PRIORITY_COLORS[action.priority] || MCVA.gray },
+                  ]}
+                >
+                  {action.priority}
+                </Text>
+                <Text style={styles.actionTitle}>{action.title}</Text>
+              </View>
+
+              <Text style={styles.actionDescription}>{action.description}</Text>
+
+              <View style={styles.actionMeta}>
+                <Text style={styles.actionMetaItem}>
+                  Impact : <Text style={styles.actionMetaValue}>+{action.impact_points} pts</Text>
+                </Text>
+                <Text style={styles.actionMetaItem}>
+                  Effort : <Text style={styles.actionMetaValue}>{action.effort}</Text>
+                </Text>
+                <Text style={styles.actionCategoryBadge}>
+                  {CATEGORY_LABELS[action.category] || action.category}
+                </Text>
+              </View>
+            </View>
+          ))}
+
+          {/* Footer */}
+          <View style={styles.footer} fixed>
+            <Text>MCVA Consulting SA — Confidentiel</Text>
+            <Text
+              render={({ pageNumber, totalPages }) =>
+                `${pageNumber} / ${totalPages}`
+              }
+            />
+          </View>
+        </Page>
+      )}
     </Document>
   );
 }

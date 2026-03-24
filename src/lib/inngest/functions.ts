@@ -1,9 +1,11 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { inngest } from "./client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { createGeoProvider } from "@/lib/providers/geo/geo-provider";
 import { scoreItems, scoreCiteItems, aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
-import type { QualityLevel } from "@/types/audit";
+import { QUALITY_CONFIG } from "@/lib/constants";
+import type { QualityLevel, GeoData, SeoData } from "@/types/audit";
 import * as cheerio from "cheerio";
 
 // --- Shared helpers ---
@@ -237,7 +239,7 @@ export const runFullAudit = inngest.createFunction(
     // Step 8: Generate action plan
     const allScoredItems = [...scoredItems, ...citeItems];
     const actions = await step.run("generate-action-plan", async () => {
-      return generateActionPlan(allScoredItems, seoData, geoData, url);
+      return generateActionPlan(allScoredItems, seoData as SeoData, geoData as GeoData, url, quality);
     });
 
     // Step 9: Save all results
@@ -353,10 +355,11 @@ function extractBrandName(html: string, domain: string): string {
 }
 
 async function generateActionPlan(
-  items: Array<{ item_code: string; item_label: string; status: string; score: number; notes: string | null; dimension?: string }>,
-  _seoData: unknown,
-  _geoData: unknown,
-  _url: string
+  items: Array<{ item_code: string; item_label: string; status: string; score: number; notes: string | null; dimension?: string; framework?: string }>,
+  seoData: SeoData,
+  geoData: GeoData,
+  url: string,
+  quality: QualityLevel = "standard"
 ): Promise<Array<{
   priority: "P1" | "P2" | "P3" | "P4";
   title: string;
@@ -365,18 +368,183 @@ async function generateActionPlan(
   effort: string;
   category: string;
 }>> {
-  // Generate actions from failed/partial items
-  const actionable = items.filter((item) => item.status !== "pass");
+  const config = QUALITY_CONFIG[quality];
 
-  return actionable
-    .sort((a, b) => a.score - b.score) // worst first
-    .slice(0, 15) // top 15 recommendations
+  // Build context for the LLM
+  const failedItems = items
+    .filter((item) => item.status !== "pass")
+    .sort((a, b) => a.score - b.score);
+
+  const passedItems = items.filter((item) => item.status === "pass");
+
+  const coreEeatFails = failedItems.filter((i) => !i.item_code.startsWith("CI-"));
+  const citeFails = failedItems.filter((i) => i.item_code.startsWith("CI-"));
+
+  // Summarize SEO data context
+  const seoContext = [
+    seoData.meta_title ? `Title: "${seoData.meta_title}"` : "Title: manquant",
+    seoData.meta_description ? `Meta desc: "${seoData.meta_description}"` : "Meta desc: manquante",
+    `H1: ${seoData.h1_count}, H2: ${seoData.h2_count}`,
+    `Schema.org: ${seoData.has_schema_org ? seoData.schema_types.join(", ") : "aucun"}`,
+    `Liens internes: ${seoData.internal_links_count}, externes: ${seoData.external_links_count}`,
+    `Images sans alt: ${seoData.images_without_alt}`,
+    seoData.page_speed_score !== null ? `PageSpeed: ${seoData.page_speed_score}/100` : null,
+    seoData.core_web_vitals?.lcp ? `LCP: ${seoData.core_web_vitals.lcp}ms` : null,
+    seoData.core_web_vitals?.cls !== null ? `CLS: ${seoData.core_web_vitals?.cls}` : null,
+  ].filter(Boolean).join("\n");
+
+  // Summarize GEO data context
+  const geoContext = [
+    `Score visibilité IA: ${geoData.ai_visibility_score}/100`,
+    `Marque mentionnée: ${geoData.brand_mentioned ? "oui" : "non"}`,
+    `Sentiment: ${geoData.brand_sentiment}`,
+    `Citations: ${geoData.citation_count} sur ${geoData.models_coverage} modèles testés`,
+    ...geoData.models_tested
+      .filter((m) => m._actually_tested !== false)
+      .map((m) => `  - ${m.model}: ${m.mentioned ? `mentionné (position: ${m.mention_position}, score: ${m.quality_score}/100)` : "non mentionné"}`),
+  ].join("\n");
+
+  const itemsSummary = failedItems
+    .slice(0, 30) // Most critical 30
+    .map((i) => `[${i.item_code}] ${i.item_label} — score: ${i.score}/100 — ${i.notes || "pas de notes"}`)
+    .join("\n");
+
+  const prompt = `Tu es un consultant SEO/GEO senior chez MCVA Consulting, spécialisé en stratégie de visibilité digitale et IA. Tu rédiges le plan d'action d'un audit complet pour un client.
+
+URL auditée : ${url}
+
+## SCORES DE L'AUDIT
+- Items réussis : ${passedItems.length}/${items.length}
+- Items en échec ou partiels : ${failedItems.length}/${items.length}
+- CORE-EEAT en échec : ${coreEeatFails.length} items
+- CITE en échec : ${citeFails.length} items
+
+## DONNÉES SEO
+${seoContext}
+
+## DONNÉES GEO (Visibilité IA)
+${geoContext}
+
+## CRITÈRES EN ÉCHEC (les plus critiques)
+${itemsSummary}
+
+---
+
+Génère un plan d'action stratégique de 10 à 15 recommandations. Chaque recommandation doit être :
+
+1. **Stratégique** : regroupe plusieurs critères liés en une action cohérente (ne répète PAS chaque critère individuellement)
+2. **Concrète** : donne des instructions précises et actionnables (pas de généralités)
+3. **Priorisée** : commence par les quick wins à fort impact
+
+Pour chaque action, réponds en JSON strict :
+[
+  {
+    "priority": "P1",
+    "title": "Titre concis et professionnel (max 60 chars)",
+    "description": "Description détaillée en 2-4 phrases. Explique le problème constaté, la solution recommandée avec des étapes concrètes, et l'impact attendu sur le SEO et/ou la visibilité IA.",
+    "impact_points": 15,
+    "effort": "2-3 jours",
+    "category": "technique"
+  }
+]
+
+Règles :
+- priority : P1 = critique (faire immédiatement), P2 = important (cette semaine), P3 = recommandé (ce mois), P4 = optimisation (ce trimestre)
+- impact_points : estimation réaliste de l'amélioration du score global (1-25 pts)
+- effort : durée réaliste ("< 1h", "1-2h", "1 jour", "2-3 jours", "1 semaine", "2-4 semaines")
+- category : "technique", "contenu", "GEO", "notoriete", ou "SEO"
+- Inclus obligatoirement au moins 2 actions spécifiques GEO (visibilité dans les moteurs IA)
+- Les titres doivent être professionnels (style cabinet de conseil), pas "Améliorer X"
+- Commence par les quick wins P1, termine par les actions P4 long terme
+
+Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
+
+  try {
+    const anthropic = new Anthropic();
+    const message = await anthropic.messages.create({
+      model: config.scoringModel,
+      max_tokens: 4000,
+      temperature: 0.2, // Slight creativity for better recommendations
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const textBlock = message.content[0];
+    const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
+
+    if (!text) {
+      console.warn("[action-plan] Empty LLM response, falling back to basic plan");
+      return generateFallbackActionPlan(failedItems);
+    }
+
+    // Parse JSON
+    const parsed = safeParseJsonActions(text);
+    if (!parsed || parsed.length === 0) {
+      console.warn("[action-plan] Failed to parse LLM response, falling back");
+      return generateFallbackActionPlan(failedItems);
+    }
+
+    // Validate and sanitize
+    const validPriorities = ["P1", "P2", "P3", "P4"];
+    const validCategories = ["technique", "contenu", "GEO", "notoriete", "SEO"];
+
+    return parsed.slice(0, 15).map((action: any) => ({
+      priority: validPriorities.includes(action.priority) ? action.priority : "P3",
+      title: typeof action.title === "string" ? action.title.slice(0, 120) : "Action recommandée",
+      description: typeof action.description === "string" ? action.description.slice(0, 600) : "",
+      impact_points: typeof action.impact_points === "number" ? Math.min(25, Math.max(1, Math.round(action.impact_points))) : 5,
+      effort: typeof action.effort === "string" ? action.effort.slice(0, 30) : "1-2 jours",
+      category: validCategories.includes(action.category) ? action.category : "SEO",
+    }));
+  } catch (error) {
+    console.error("[action-plan] LLM generation failed:", error);
+    return generateFallbackActionPlan(failedItems);
+  }
+}
+
+function safeParseJsonActions(text: string): any[] | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed;
+  } catch { /* fall through */ }
+
+  const match = text.match(/\[[\s\S]*?\](?=[^[\]]*$)/);
+  if (!match) {
+    const greedyMatch = text.match(/\[[\s\S]*\]/);
+    if (!greedyMatch) return null;
+    try {
+      const parsed = JSON.parse(greedyMatch[0]);
+      if (Array.isArray(parsed)) return parsed;
+    } catch { return null; }
+  }
+
+  try {
+    const parsed = JSON.parse(match![0]);
+    if (Array.isArray(parsed)) return parsed;
+  } catch { /* fall through */ }
+
+  return null;
+}
+
+/** Fallback when LLM is unavailable */
+function generateFallbackActionPlan(
+  failedItems: Array<{ item_code: string; item_label: string; status: string; score: number; notes: string | null }>
+): Array<{
+  priority: "P1" | "P2" | "P3" | "P4";
+  title: string;
+  description: string;
+  impact_points: number;
+  effort: string;
+  category: string;
+}> {
+  return failedItems
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 15)
     .map((item, idx) => ({
       priority: (idx < 3 ? "P1" : idx < 7 ? "P2" : idx < 12 ? "P3" : "P4") as "P1" | "P2" | "P3" | "P4",
       title: `Améliorer : ${item.item_label}`,
       description: item.notes || `Le critère ${item.item_code} nécessite une amélioration.`,
-      impact_points: Math.max(0, 100 - item.score),
-      effort: item.score < 25 ? "1-2 jours" : "< 30 min",
+      impact_points: Math.max(1, Math.round((100 - item.score) / 5)),
+      effort: item.score < 25 ? "2-3 jours" : "1-2h",
       category: categorizeItem(item.item_code),
     }));
 }

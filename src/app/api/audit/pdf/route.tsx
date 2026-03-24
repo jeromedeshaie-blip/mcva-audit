@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch audit data
-    const [auditRes, scoresRes, itemsRes] = await Promise.all([
+    const [auditRes, scoresRes, itemsRes, actionsRes] = await Promise.all([
       supabase.from("audits").select("*").eq("id", auditId).single(),
       supabase.from("audit_scores").select("*").eq("audit_id", auditId).single(),
       supabase
@@ -33,6 +33,11 @@ export async function GET(request: NextRequest) {
         .select("*")
         .eq("audit_id", auditId)
         .order("item_code"),
+      supabase
+        .from("audit_actions")
+        .select("*")
+        .eq("audit_id", auditId)
+        .order("priority"),
     ]);
 
     if (!auditRes.data || !scoresRes.data) {
@@ -45,6 +50,7 @@ export async function GET(request: NextRequest) {
         audit: auditRes.data,
         scores: scoresRes.data,
         items: itemsRes.data || [],
+        actions: actionsRes.data || [],
       }) as any
     );
 
