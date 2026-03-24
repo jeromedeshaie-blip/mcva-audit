@@ -47,7 +47,7 @@ export const CORE_EEAT_ITEMS: CoreEeatItemDef[] = [
   // === R — Reputation & References (10 items) ===
   { code: "R01", label: "Citations par les moteurs IA", dimension: "R", description: "La marque est citée dans les réponses de ChatGPT, Perplexity, Claude, Gemini.", isExpress: true, isGeoFirst: true },
   { code: "R02", label: "Présence dans les sources fiables", dimension: "R", description: "Mentions sur Wikipédia, articles de presse, sites institutionnels.", isExpress: true, isGeoFirst: true },
-  { code: "R03", label: "Backlinks de qualité", dimension: "R", description: "Liens entrants depuis des domaines à forte autorité et thématiquement pertinents.", isExpress: false, isGeoFirst: true },
+  { code: "R03", label: "Backlinks de qualité", dimension: "R", description: "Liens entrants depuis des domaines à forte autorité et thématiquement pertinents.", isExpress: true, isGeoFirst: true },
   { code: "R04", label: "Diversité des domaines référents", dimension: "R", description: "Les backlinks proviennent de domaines variés, pas d'un seul réseau.", isExpress: false, isGeoFirst: true },
   { code: "R05", label: "Mentions de marque sans lien", dimension: "R", description: "La marque est mentionnée sur des sites tiers même sans lien hypertexte.", isExpress: false, isGeoFirst: true },
   { code: "R06", label: "Avis et témoignages", dimension: "R", description: "Avis clients visibles, balisés en schema.org (Review, AggregateRating).", isExpress: false, isGeoFirst: false },
