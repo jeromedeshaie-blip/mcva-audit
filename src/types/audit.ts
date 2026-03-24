@@ -110,6 +110,9 @@ export interface AIModelResult {
   citation_text: string | null;
   sentiment: "positive" | "neutral" | "negative" | "not_mentioned";
   context: string | null; // dans quel contexte la marque est citée
+  quality_score?: number; // 0-100: quality of the mention (position, recommendation, detail)
+  mention_position?: "first" | "top3" | "listed" | "not_mentioned"; // where in the response
+  is_recommended?: boolean; // explicitly recommended by the model
   _actually_tested?: boolean; // false if API key was missing (won't count in scoring)
 }
 

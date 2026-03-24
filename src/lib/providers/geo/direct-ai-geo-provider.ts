@@ -73,9 +73,12 @@ export class DirectAIGeoProvider implements GeoProvider {
     const mentionedCount = testedModels.filter((r) => r.mentioned).length;
     const totalModels = testedModels.length;
 
-    // Calculate AI visibility score (0-100)
-    const visibilityScore =
-      totalModels > 0 ? Math.round((mentionedCount / totalModels) * 100) : 0;
+    // Calculate AI visibility score (0-100) — weighted by quality, not binary
+    const visibilityScore = totalModels > 0
+      ? Math.round(
+          testedModels.reduce((sum, r) => sum + (r.quality_score ?? (r.mentioned ? 50 : 0)), 0) / totalModels
+        )
+      : 0;
 
     // Determine overall sentiment
     const sentiments = testedModels.map((r) => r.sentiment);
@@ -163,6 +166,7 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
       const text =
         message.content[0].type === "text" ? message.content[0].text : "";
       const mentioned = isBrandMentioned(text, brand, domain);
+      const qualityAnalysis = mentioned ? analyzeQuality(text, brand, domain) : null;
 
       return {
         model: "claude",
@@ -170,6 +174,9 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
         citation_text: mentioned ? extractCitation(text, brand, domain) : null,
         sentiment: mentioned ? analyzeSentiment(text, brand) : "not_mentioned",
         context: mentioned ? extractContext(text, brand, domain) : null,
+        quality_score: qualityAnalysis?.score ?? 0,
+        mention_position: qualityAnalysis?.position ?? "not_mentioned",
+        is_recommended: qualityAnalysis?.isRecommended ?? false,
       };
     } finally {
       clearTimeout(timeout);
@@ -225,6 +232,7 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || "";
     const mentioned = isBrandMentioned(text, brand, domain);
+    const qualityAnalysis = mentioned ? analyzeQuality(text, brand, domain) : null;
 
     return {
       model: "gpt-4o",
@@ -232,6 +240,9 @@ Si tu ne connais pas cette marque, utilise "not_mentioned" comme sentiment.`,
       citation_text: mentioned ? extractCitation(text, brand, domain) : null,
       sentiment: mentioned ? analyzeSentiment(text, brand) : "not_mentioned",
       context: mentioned ? extractContext(text, brand, domain) : null,
+      quality_score: qualityAnalysis?.score ?? 0,
+      mention_position: qualityAnalysis?.position ?? "not_mentioned",
+      is_recommended: qualityAnalysis?.isRecommended ?? false,
     };
   }
 }
@@ -354,6 +365,85 @@ function extractContext(
       s.toLowerCase().includes(domain.toLowerCase())
   );
   return relevant?.trim().slice(0, 200) || null;
+}
+
+/**
+ * Analyze quality of brand mention: position, recommendation, detail level.
+ * Returns a score 0-100 instead of binary mentioned/not.
+ */
+function analyzeQuality(
+  text: string,
+  brand: string,
+  domain: string
+): { score: number; position: "first" | "top3" | "listed" | "not_mentioned"; isRecommended: boolean } {
+  const lowerText = text.toLowerCase();
+  const lowerBrand = brand.toLowerCase();
+  const lowerDomain = domain.toLowerCase();
+
+  let score = 0;
+
+  // 1. Position analysis (0-40 points)
+  // Split by questions/sections to find first mention
+  const sections = text.split(/Question \d+|[\n]{2,}/i).filter(s => s.trim());
+  let firstMentionIndex = -1;
+  let mentionCount = 0;
+
+  for (let i = 0; i < sections.length; i++) {
+    const sectionLower = sections[i].toLowerCase();
+    if (sectionLower.includes(lowerBrand) || sectionLower.includes(lowerDomain)) {
+      if (firstMentionIndex === -1) firstMentionIndex = i;
+      mentionCount++;
+    }
+  }
+
+  let position: "first" | "top3" | "listed" | "not_mentioned" = "not_mentioned";
+
+  if (mentionCount === 0) {
+    return { score: 0, position: "not_mentioned", isRecommended: false };
+  }
+
+  // Check if brand is mentioned first in any list
+  const listPatterns = text.split(/\n/).filter(line => line.trim().match(/^[-•*\d]/));
+  const brandInFirstItems = listPatterns.slice(0, 3).some(
+    line => line.toLowerCase().includes(lowerBrand) || line.toLowerCase().includes(lowerDomain)
+  );
+
+  if (brandInFirstItems || firstMentionIndex === 0) {
+    position = "first";
+    score += 40;
+  } else if (firstMentionIndex <= 2) {
+    position = "top3";
+    score += 25;
+  } else {
+    position = "listed";
+    score += 10;
+  }
+
+  // 2. Recommendation strength (0-30 points)
+  const recommendWords = ["recommande", "conseille", "privilégie", "meilleur", "idéal", "incontournable", "référence", "excellent choix"];
+  const brandContext = lowerText
+    .split(/[.\n]/)
+    .filter(s => s.includes(lowerBrand) || s.includes(lowerDomain))
+    .join(" ");
+
+  const isRecommended = recommendWords.some(w => brandContext.includes(w));
+  if (isRecommended) {
+    score += 30;
+  }
+
+  // 3. Sentiment bonus (0-15 points)
+  const sentiment = analyzeSentiment(text, brand);
+  if (sentiment === "positive") score += 15;
+  else if (sentiment === "neutral") score += 5;
+
+  // 4. Frequency bonus (0-15 points) — mentioned in multiple questions
+  const questionsWithMention = sections.filter(
+    s => s.toLowerCase().includes(lowerBrand) || s.toLowerCase().includes(lowerDomain)
+  ).length;
+  const totalQuestions = Math.max(sections.length, 1);
+  score += Math.round((questionsWithMention / totalQuestions) * 15);
+
+  return { score: Math.min(100, score), position, isRecommended };
 }
 
 function determineSentiment(

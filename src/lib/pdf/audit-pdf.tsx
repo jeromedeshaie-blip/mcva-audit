@@ -234,6 +234,13 @@ const CORE_EEAT_LABELS: Record<string, string> = {
   T: "Confiance",
 };
 
+const CITE_LABELS: Record<string, string> = {
+  C: "Credibilite",
+  I: "Influence",
+  T: "Confiance (Trust)",
+  E: "Engagement",
+};
+
 interface AuditPdfProps {
   audit: Audit;
   scores: AuditScores;
@@ -248,7 +255,9 @@ export function AuditPdfDocument({ audit, scores, items }: AuditPdfProps) {
   });
 
   const coreEeatItems = items.filter((i) => i.framework === "core_eeat");
+  const citeItems = items.filter((i) => i.framework === "cite");
   const isExpress = audit.audit_type === "express";
+  const hasCiteScores = Object.keys(scores.score_cite || {}).length > 0;
 
   return (
     <Document>
@@ -373,7 +382,7 @@ export function AuditPdfDocument({ audit, scores, items }: AuditPdfProps) {
         {/* Items detail */}
         {coreEeatItems.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>Detail des criteres</Text>
+            <Text style={styles.sectionTitle}>Detail des criteres CORE-EEAT</Text>
             <View
               style={[
                 styles.itemRow,
@@ -392,6 +401,82 @@ export function AuditPdfDocument({ audit, scores, items }: AuditPdfProps) {
               </Text>
             </View>
             {coreEeatItems.map((item) => (
+              <View key={item.item_code} style={styles.itemRow}>
+                <Text style={styles.itemCode}>{item.item_code}</Text>
+                <Text style={styles.itemLabel}>{item.item_label}</Text>
+                <Text
+                  style={[
+                    styles.itemStatus,
+                    { color: getScoreColor(item.score) },
+                  ]}
+                >
+                  {item.status === "pass"
+                    ? "OK"
+                    : item.status === "partial"
+                      ? "~"
+                      : "KO"}
+                </Text>
+                <Text style={styles.itemScore}>{item.score}</Text>
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* CITE Dimensions */}
+        {hasCiteScores && (
+          <>
+            <Text style={styles.sectionTitle}>Scores par dimension CITE</Text>
+            {["C", "I", "T", "E"].map((dim) => {
+              const score = scores.score_cite[dim] ?? 0;
+              return (
+                <View key={`cite-${dim}`} style={styles.dimensionRow}>
+                  <View style={styles.dimensionLabel}>
+                    <Text>
+                      <Text style={styles.dimensionCode}>{dim}</Text>
+                      {"  "}
+                      {CITE_LABELS[dim]}
+                    </Text>
+                  </View>
+                  <View style={styles.dimensionBarBg}>
+                    <View
+                      style={[
+                        styles.dimensionBarFill,
+                        {
+                          width: `${score}%`,
+                          backgroundColor: getScoreColor(score),
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.dimensionScore}>{score}</Text>
+                </View>
+              );
+            })}
+          </>
+        )}
+
+        {/* CITE Items detail */}
+        {citeItems.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Detail des criteres CITE</Text>
+            <View
+              style={[
+                styles.itemRow,
+                { backgroundColor: MCVA.lightGray, borderBottomWidth: 1 },
+              ]}
+            >
+              <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
+              <Text style={[styles.itemLabel, { fontWeight: 700 }]}>
+                Critere
+              </Text>
+              <Text style={[styles.itemStatus, { fontWeight: 700 }]}>
+                Statut
+              </Text>
+              <Text style={[styles.itemScore, { fontWeight: 700 }]}>
+                Score
+              </Text>
+            </View>
+            {citeItems.map((item) => (
               <View key={item.item_code} style={styles.itemRow}>
                 <Text style={styles.itemCode}>{item.item_code}</Text>
                 <Text style={styles.itemLabel}>{item.item_label}</Text>
