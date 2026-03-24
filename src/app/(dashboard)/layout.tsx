@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Dashboard" },
+  { href: "/", label: "Tableau de bord" },
   { href: "/audit-express", label: "Audit Express" },
   { href: "/audit-complet", label: "Audit Complet" },
   { href: "/classements", label: "Classements" },
