@@ -165,6 +165,14 @@ export const runExpressAudit = inngest.createFunction(
       }
     });
 
+    // Emit completion event (used by benchmark batch to track progress)
+    await step.run("emit-completion-event", async () => {
+      await inngest.send({
+        name: "audit/express.completed",
+        data: { auditId },
+      });
+    });
+
     return { auditId, status: "completed" };
   }
 );
@@ -576,4 +584,199 @@ function categorizeItem(code: string): string {
   return map[prefix] || "SEO";
 }
 
-export const functions = [runExpressAudit, runFullAudit];
+/**
+ * Benchmark Batch — Inngest function
+ *
+ * Lance N audits eco en parallèle pour tous les domaines d'un benchmark,
+ * puis calcule les classements SEO/GEO une fois tous les audits terminés.
+ */
+export const runBenchmarkBatch = inngest.createFunction(
+  {
+    id: "run-benchmark-batch",
+    name: "Run Benchmark Batch",
+    triggers: [{ event: "benchmark/batch.requested" }],
+    onFailure: async ({ event }: { event: any }) => {
+      const benchmarkId = event.data?.event?.data?.benchmarkId;
+      if (benchmarkId) {
+        try {
+          const supabase = createServiceClient();
+          await supabase
+            .from("benchmarks")
+            .update({ status: "error" })
+            .eq("id", benchmarkId);
+        } catch (e) {
+          console.error(`[benchmark:${benchmarkId}] Failed to set error status:`, e);
+        }
+      }
+    },
+  },
+  async ({ event, step }: { event: any; step: any }) => {
+    const { benchmarkId } = event.data as { benchmarkId: string };
+    const supabase = createServiceClient();
+
+    // Step 1: Set benchmark to running
+    await step.run("update-status-running", async () => {
+      await supabase
+        .from("benchmarks")
+        .update({ status: "running" })
+        .eq("id", benchmarkId);
+    });
+
+    // Step 2: Fetch all domains
+    const domains = await step.run("fetch-domains", async () => {
+      const { data, error } = await supabase
+        .from("benchmark_domains")
+        .select("*")
+        .eq("benchmark_id", benchmarkId);
+      if (error) throw new Error(`Failed to fetch domains: ${error.message}`);
+      return data || [];
+    });
+
+    // Step 3: Fetch benchmark info for sector
+    const benchmark = await step.run("fetch-benchmark", async () => {
+      const { data, error } = await supabase
+        .from("benchmarks")
+        .select("*")
+        .eq("id", benchmarkId)
+        .single();
+      if (error) throw new Error(`Failed to fetch benchmark: ${error.message}`);
+      return data;
+    });
+
+    // Step 4: Launch eco audits for each domain
+    const auditIds: Array<{ domainId: string; auditId: string }> = [];
+
+    for (const domain of domains) {
+      const result = await step.run(`launch-audit-${domain.domain}`, async () => {
+        // Create audit row
+        const { data: audit, error: auditError } = await supabase
+          .from("audits")
+          .insert({
+            url: domain.url,
+            domain: domain.domain,
+            sector: benchmark.sub_category,
+            audit_type: "express",
+            status: "pending",
+            parent_audit_id: null,
+            created_by: benchmark.created_by,
+          })
+          .select()
+          .single();
+
+        if (auditError) throw new Error(`Failed to create audit for ${domain.domain}: ${auditError.message}`);
+
+        // Link audit to benchmark_domain
+        await supabase
+          .from("benchmark_domains")
+          .update({ audit_id: audit.id })
+          .eq("id", domain.id);
+
+        // Send express audit event with eco quality
+        await inngest.send({
+          name: "audit/express.requested",
+          data: {
+            auditId: audit.id,
+            url: audit.url,
+            domain: audit.domain,
+            sector: audit.sector,
+            quality: "eco",
+          },
+        });
+
+        return { domainId: domain.id, auditId: audit.id };
+      });
+
+      auditIds.push(result);
+    }
+
+    // Step 5: Wait for all audits to complete (poll every 15s, max 25 min)
+    await step.run("wait-for-audits", async () => {
+      const maxWaitMs = 25 * 60 * 1000;
+      const pollIntervalMs = 15000;
+      const startTime = Date.now();
+      const allAuditIds = auditIds.map((a) => a.auditId);
+
+      while (Date.now() - startTime < maxWaitMs) {
+        const { data: audits } = await supabase
+          .from("audits")
+          .select("id, status")
+          .in("id", allAuditIds);
+
+        if (!audits) {
+          await new Promise((r) => setTimeout(r, pollIntervalMs));
+          continue;
+        }
+
+        const completed = audits.filter((a: any) => a.status === "completed" || a.status === "error");
+
+        // Update progress
+        await supabase
+          .from("benchmarks")
+          .update({ completed_count: completed.length })
+          .eq("id", benchmarkId);
+
+        if (completed.length >= allAuditIds.length) break;
+
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+      }
+    });
+
+    // Step 6: Compute rankings
+    await step.run("compute-rankings", async () => {
+      const allAuditIds = auditIds.map((a) => a.auditId);
+
+      // Fetch scores for all audits
+      const { data: allScores } = await supabase
+        .from("audit_scores")
+        .select("audit_id, score_seo, score_geo")
+        .in("audit_id", allAuditIds);
+
+      const scoresMap = new Map((allScores || []).map((s: any) => [s.audit_id, s]));
+
+      // Build ranking data
+      const rankingData = auditIds.map(({ domainId, auditId }) => {
+        const scores: any = scoresMap.get(auditId);
+        return {
+          domainId,
+          auditId,
+          score_seo: scores?.score_seo ?? 0,
+          score_geo: scores?.score_geo ?? 0,
+        };
+      });
+
+      // Sort by SEO score desc → assign ranks
+      const bySeo = [...rankingData].sort((a, b) => b.score_seo - a.score_seo);
+      const byGeo = [...rankingData].sort((a, b) => b.score_geo - a.score_geo);
+
+      const seoRanks = new Map(bySeo.map((item, idx) => [item.domainId, idx + 1]));
+      const geoRanks = new Map(byGeo.map((item, idx) => [item.domainId, idx + 1]));
+
+      // Update each benchmark_domain with scores and ranks
+      for (const item of rankingData) {
+        await supabase
+          .from("benchmark_domains")
+          .update({
+            score_seo: item.score_seo,
+            score_geo: item.score_geo,
+            rank_seo: seoRanks.get(item.domainId),
+            rank_geo: geoRanks.get(item.domainId),
+          })
+          .eq("id", item.domainId);
+      }
+
+      // Mark benchmark as completed
+      await supabase
+        .from("benchmarks")
+        .update({
+          status: "completed",
+          completed_count: rankingData.length,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", benchmarkId);
+    });
+
+    return { benchmarkId, status: "completed", domains: domains.length };
+  }
+);
+
+export const functions = [runExpressAudit, runFullAudit, runBenchmarkBatch];

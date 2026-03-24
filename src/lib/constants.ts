@@ -16,11 +16,22 @@ export const SECTORS = [
 
 export type SectorValue = (typeof SECTORS)[number]["value"];
 
-/** Max polling duration before timeout (5 minutes for express, 20 for full) */
+/** Max polling duration before timeout */
 export const POLLING_TIMEOUT_MS = {
   express: 5 * 60 * 1000,
   full: 20 * 60 * 1000,
+  benchmark: 30 * 60 * 1000,
 } as const;
+
+/** Geographic scopes for benchmarks */
+export const GEOGRAPHIC_SCOPES = [
+  { value: "local", label: "Local (ville/commune)" },
+  { value: "canton", label: "Canton" },
+  { value: "suisse-romande", label: "Suisse romande" },
+  { value: "suisse", label: "Suisse" },
+  { value: "europe", label: "Europe" },
+  { value: "monde", label: "Monde" },
+] as const;
 
 /** Number of items per audit type */
 export const AUDIT_ITEM_COUNTS = {

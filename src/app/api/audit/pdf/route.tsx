@@ -44,6 +44,41 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Audit non trouvé" }, { status: 404 });
     }
 
+    // Look up benchmark ranking for this domain (if any)
+    let benchmarkRanking = undefined;
+    if (auditRes.data.audit_type === "full") {
+      const domain = auditRes.data.domain;
+      // Find the latest completed benchmark containing this domain
+      const { data: benchmarkDomain } = await supabase
+        .from("benchmark_domains")
+        .select("benchmark_id, domain, rank_seo, rank_geo, score_seo, score_geo")
+        .eq("domain", domain)
+        .not("rank_seo", "is", null)
+        .limit(1);
+
+      if (benchmarkDomain && benchmarkDomain.length > 0) {
+        const bmId = benchmarkDomain[0].benchmark_id;
+        const [bmRes, bmDomainsRes] = await Promise.all([
+          supabase.from("benchmarks").select("*").eq("id", bmId).single(),
+          supabase
+            .from("benchmark_domains")
+            .select("*")
+            .eq("benchmark_id", bmId)
+            .order("rank_seo", { ascending: true, nullsFirst: false }),
+        ]);
+
+        if (bmRes.data && bmDomainsRes.data) {
+          benchmarkRanking = {
+            benchmarkName: bmRes.data.name,
+            geographicScope: bmRes.data.geographic_scope,
+            subCategory: bmRes.data.sub_category,
+            domains: bmDomainsRes.data,
+            clientDomain: domain,
+          };
+        }
+      }
+    }
+
     // Generate PDF
     const pdfBuffer = await renderToBuffer(
       React.createElement(AuditPdfDocument, {
@@ -51,6 +86,7 @@ export async function GET(request: NextRequest) {
         scores: scoresRes.data,
         items: itemsRes.data || [],
         actions: actionsRes.data || [],
+        benchmarkRanking,
       }) as any
     );
 

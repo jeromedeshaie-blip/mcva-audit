@@ -284,6 +284,44 @@ const styles = StyleSheet.create({
     color: MCVA.gray,
     marginTop: 2,
   },
+  // Ranking table
+  rankingRow: {
+    flexDirection: "row" as const,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  rankingRowHighlight: {
+    backgroundColor: "#FEF2F2",
+    borderLeftWidth: 3,
+    borderLeftColor: MCVA.red,
+  },
+  rankingCell: {
+    fontSize: 8.5,
+  },
+  rankingCellBold: {
+    fontSize: 8.5,
+    fontWeight: 700,
+  },
+  rankingHeader: {
+    backgroundColor: MCVA.lightGray,
+    borderBottomWidth: 1,
+    borderBottomColor: "#D1D5DB",
+  },
+  rankingPosition: {
+    fontSize: 16,
+    fontWeight: 700,
+    textAlign: "center" as const,
+  },
+  rankingPositionBox: {
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    padding: 16,
+    borderRadius: 8,
+    backgroundColor: MCVA.lightGray,
+    width: 120,
+  },
 });
 
 function getScoreColor(score: number): string {
@@ -340,14 +378,29 @@ const CATEGORY_LABELS: Record<string, string> = {
   SEO: "SEO",
 };
 
+interface BenchmarkRankingData {
+  benchmarkName: string;
+  geographicScope: string;
+  subCategory: string;
+  domains: Array<{
+    domain: string;
+    rank_seo: number | null;
+    rank_geo: number | null;
+    score_seo: number | null;
+    score_geo: number | null;
+  }>;
+  clientDomain: string;
+}
+
 interface AuditPdfProps {
   audit: Audit;
   scores: AuditScores;
   items: AuditItem[];
   actions?: AuditAction[];
+  benchmarkRanking?: BenchmarkRankingData;
 }
 
-export function AuditPdfDocument({ audit, scores, items, actions = [] }: AuditPdfProps) {
+export function AuditPdfDocument({ audit, scores, items, actions = [], benchmarkRanking }: AuditPdfProps) {
   const date = new Date(audit.created_at).toLocaleDateString("fr-FR", {
     day: "numeric",
     month: "long",
@@ -698,6 +751,130 @@ export function AuditPdfDocument({ audit, scores, items, actions = [] }: AuditPd
               </View>
             </View>
           ))}
+
+          {/* Footer */}
+          <View style={styles.footer} fixed>
+            <Text>MCVA Consulting SA — Confidentiel</Text>
+            <Text
+              render={({ pageNumber, totalPages }) =>
+                `${pageNumber} / ${totalPages}`
+              }
+            />
+          </View>
+        </Page>
+      )}
+
+      {/* Benchmark Ranking Page (full audit only, if benchmark data exists) */}
+      {!isExpress && benchmarkRanking && benchmarkRanking.domains.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.logo}>
+              <View style={styles.logoMark}>
+                <Text style={{ color: MCVA.white, fontSize: 14, fontWeight: 700 }}>+</Text>
+              </View>
+              <Text style={styles.logoText}>MCVA Consulting</Text>
+            </View>
+            <Text style={styles.headerDate}>{date}</Text>
+          </View>
+          <View style={styles.accentBar} />
+
+          <Text style={styles.title}>Positionnement sectoriel</Text>
+          <Text style={styles.subtitle}>
+            {benchmarkRanking.benchmarkName} — {benchmarkRanking.geographicScope}
+          </Text>
+
+          {/* Client position summary */}
+          {(() => {
+            const clientEntry = benchmarkRanking.domains.find(
+              (d) => d.domain === benchmarkRanking.clientDomain
+            );
+            const total = benchmarkRanking.domains.length;
+            if (!clientEntry) return null;
+            return (
+              <View style={styles.actionSummaryBox}>
+                <View style={styles.rankingPositionBox}>
+                  <Text style={[styles.rankingPosition, { color: MCVA.red }]}>
+                    {clientEntry.rank_seo ?? "-"}/{total}
+                  </Text>
+                  <Text style={styles.actionSummaryLabel}>RANG SEO</Text>
+                </View>
+                <View style={styles.rankingPositionBox}>
+                  <Text style={[styles.rankingPosition, { color: MCVA.red }]}>
+                    {clientEntry.rank_geo ?? "-"}/{total}
+                  </Text>
+                  <Text style={styles.actionSummaryLabel}>RANG GEO</Text>
+                </View>
+                <View style={styles.rankingPositionBox}>
+                  <Text style={[styles.rankingPosition, { color: getScoreColor(clientEntry.score_seo ?? 0) }]}>
+                    {clientEntry.score_seo ?? "-"}
+                  </Text>
+                  <Text style={styles.actionSummaryLabel}>SCORE SEO</Text>
+                </View>
+                <View style={styles.rankingPositionBox}>
+                  <Text style={[styles.rankingPosition, { color: getScoreColor(clientEntry.score_geo ?? 0) }]}>
+                    {clientEntry.score_geo ?? "-"}
+                  </Text>
+                  <Text style={styles.actionSummaryLabel}>SCORE GEO</Text>
+                </View>
+              </View>
+            );
+          })()}
+
+          {/* Full ranking table */}
+          <View style={[styles.rankingRow, styles.rankingHeader]}>
+            <Text style={[styles.rankingCellBold, { width: 30 }]}>#</Text>
+            <Text style={[styles.rankingCellBold, { flex: 1 }]}>Domaine</Text>
+            <Text style={[styles.rankingCellBold, { width: 55, textAlign: "center" }]}>SEO</Text>
+            <Text style={[styles.rankingCellBold, { width: 55, textAlign: "center" }]}>GEO</Text>
+            <Text style={[styles.rankingCellBold, { width: 55, textAlign: "center" }]}>Rang SEO</Text>
+            <Text style={[styles.rankingCellBold, { width: 55, textAlign: "center" }]}>Rang GEO</Text>
+          </View>
+
+          {benchmarkRanking.domains
+            .sort((a, b) => (a.rank_seo ?? 999) - (b.rank_seo ?? 999))
+            .map((d) => {
+              const isClient = d.domain === benchmarkRanking.clientDomain;
+              return (
+                <View
+                  key={d.domain}
+                  style={[
+                    styles.rankingRow,
+                    isClient ? styles.rankingRowHighlight : {},
+                  ]}
+                  wrap={false}
+                >
+                  <Text style={[isClient ? styles.rankingCellBold : styles.rankingCell, { width: 30 }]}>
+                    {d.rank_seo ?? "-"}
+                  </Text>
+                  <Text style={[isClient ? styles.rankingCellBold : styles.rankingCell, { flex: 1 }]}>
+                    {d.domain}{isClient ? " ★" : ""}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.rankingCellBold,
+                      { width: 55, textAlign: "center", color: getScoreColor(d.score_seo ?? 0) },
+                    ]}
+                  >
+                    {d.score_seo ?? "-"}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.rankingCellBold,
+                      { width: 55, textAlign: "center", color: getScoreColor(d.score_geo ?? 0) },
+                    ]}
+                  >
+                    {d.score_geo ?? "-"}
+                  </Text>
+                  <Text style={[styles.rankingCell, { width: 55, textAlign: "center" }]}>
+                    {d.rank_seo ?? "-"}/{benchmarkRanking.domains.length}
+                  </Text>
+                  <Text style={[styles.rankingCell, { width: 55, textAlign: "center" }]}>
+                    {d.rank_geo ?? "-"}/{benchmarkRanking.domains.length}
+                  </Text>
+                </View>
+              );
+            })}
 
           {/* Footer */}
           <View style={styles.footer} fixed>

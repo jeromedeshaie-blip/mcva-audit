@@ -170,6 +170,35 @@ export interface SectorRanking {
   created_at: string;
 }
 
+// --- Benchmarks ---
+
+export type BenchmarkStatus = "draft" | "running" | "completed" | "error";
+
+export interface Benchmark {
+  id: string;
+  name: string;
+  sub_category: string;
+  geographic_scope: string;
+  status: BenchmarkStatus;
+  domains_count: number;
+  completed_count: number;
+  created_by: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface BenchmarkDomain {
+  id: string;
+  benchmark_id: string;
+  domain: string;
+  url: string;
+  audit_id: string | null;
+  rank_seo: number | null;
+  rank_geo: number | null;
+  score_seo: number | null;
+  score_geo: number | null;
+}
+
 // --- User ---
 
 export interface User {

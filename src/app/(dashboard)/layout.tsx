@@ -4,6 +4,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Tableau de bord" },
   { href: "/audit-express", label: "Audit Express" },
   { href: "/audit-complet", label: "Audit Complet" },
+  { href: "/benchmarks", label: "Benchmarks" },
   { href: "/classements", label: "Classements" },
 ];
 
