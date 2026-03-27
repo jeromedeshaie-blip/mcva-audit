@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { href: "/audit-express", label: "Audit Express" },
   { href: "/audit-complet", label: "Audit Complet" },
   { href: "/benchmarks", label: "Benchmarks" },
+  { href: "/llmwatch", label: "LLM Watch" },
   { href: "/classements", label: "Classements" },
 ];
 
