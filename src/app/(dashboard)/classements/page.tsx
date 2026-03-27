@@ -5,16 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import type { SectorRanking } from "@/types/audit";
-import { SECTORS } from "@/lib/constants";
+import { SECTORS, SECTOR_GROUPS } from "@/lib/constants";
 
 export default function ClassementsPage() {
-  const [sector, setSector] = useState("tech-saas");
+  const [sector, setSector] = useState("finance-fiduciaire");
   const [rankings, setRankings] = useState<SectorRanking[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,10 +52,15 @@ export default function ClassementsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {SECTORS.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
-              </SelectItem>
+            {SECTOR_GROUPS.map((group) => (
+              <SelectGroup key={group.value}>
+                <SelectLabel className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">{group.label}</SelectLabel>
+                {group.subSectors.map((sub) => (
+                  <SelectItem key={sub.value} value={sub.value}>
+                    {sub.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             ))}
           </SelectContent>
         </Select>

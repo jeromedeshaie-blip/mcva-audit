@@ -268,25 +268,31 @@ export const runFullAudit = inngest.createFunction(
 
     // ── Site Audit Steps: Technical checks (no LLM, fast) ──
 
-    // Step: Crawl page + robots.txt (uses Cheerio, ~2-5s)
+    // Step: Crawl page + robots.txt + SEO checks (single fetch, ~3-5s)
     const fullUrl = url.startsWith("http") ? url : `https://${url}`;
-    const crawlResult = await step.run("siteaudit-crawl", async () => {
-      const [crawl, robots] = await Promise.all([
-        crawlUrl(fullUrl),
-        checkRobotsTxt(fullUrl),
-      ]);
-      // Return serializable data (no $ cheerio object)
-      const { html: _h, ...crawlData } = crawl;
-      return { crawl: crawlData, robots };
+    const crawlAndSeoResult = await step.run("siteaudit-crawl-and-checks", async () => {
+      try {
+        const [crawl, robots] = await Promise.all([
+          crawlUrl(fullUrl),
+          checkRobotsTxt(fullUrl),
+        ]);
+        // Run SEO checks immediately while we still have the full crawl data
+        const seoChecks = runSeoChecks(crawl, robots);
+        // Strip HTML before returning (not serializable for large pages)
+        const { html: _h, ...crawlData } = crawl;
+        return { crawl: crawlData, robots, seoChecks, error: null };
+      } catch (e: any) {
+        console.warn(`[audit:${auditId}] Site audit crawl failed:`, e.message);
+        return {
+          crawl: { url: fullUrl, bodyText: "", images: [], hreflang: [], schemaScripts: [], h1: [], h2: [], h3: [], links: [], title: null, metaDescription: null, canonicalUrl: null, hasViewport: false, statusCode: 0, loadTime: 0, robotsMeta: null, charset: null },
+          robots: { exists: false, hasSitemap: false, sitemapUrl: null, blocksAll: false },
+          seoChecks: { checks: [], score: 0, schemaData: { schemas_found: [], has_local_business: false, has_faq: false, has_breadcrumb: false, has_website: false, issues: [] } },
+          error: e.message,
+        };
+      }
     });
-
-    // Step: SEO technical checks (pure computation, instant)
-    const seoTechResult = await step.run("siteaudit-seo-checks", async () => {
-      // Re-crawl needed since CrawlResult has transient data
-      const crawl = await crawlUrl(fullUrl);
-      const robots = crawlResult.robots;
-      return runSeoChecks(crawl, robots);
-    });
+    const crawlResult = crawlAndSeoResult;
+    const seoTechResult = crawlAndSeoResult.seoChecks;
 
     // Step: PageSpeed Insights (external API, ~10-20s)
     const perfResult = await step.run("siteaudit-pagespeed", async () => {
