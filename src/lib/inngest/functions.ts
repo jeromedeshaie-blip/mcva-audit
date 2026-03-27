@@ -3,10 +3,19 @@ import { inngest } from "./client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { createGeoProvider } from "@/lib/providers/geo/geo-provider";
-import { scoreItems, scoreCiteItems, aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
+import { scoreItems, scoreCiteItems, aggregateScores, calculateSeoScore, scoreOneDimension, scoreOneCiteDimension, getCoreEeatDimensions, getCiteDimensions } from "@/lib/scoring/scorer";
 import { QUALITY_CONFIG } from "@/lib/constants";
 import type { QualityLevel, GeoData, SeoData } from "@/types/audit";
 import * as cheerio from "cheerio";
+
+// Site Audit imports
+import { crawlUrl, checkRobotsTxt } from "@/lib/siteaudit/crawler";
+import { runSeoChecks } from "@/lib/siteaudit/seo-checker";
+import { getPageSpeedScore } from "@/lib/siteaudit/performance";
+import { analyzeReadability } from "@/lib/siteaudit/readability";
+import { computeGlobalScore, accessibilityViolationsToScore, readabilityToScore } from "@/lib/siteaudit/scoring";
+import { generateRecommendations } from "@/lib/siteaudit/recommendations";
+import type { AccessibilityViolation } from "@/lib/siteaudit/types";
 
 // --- Shared helpers ---
 
@@ -219,7 +228,7 @@ export const runFullAudit = inngest.createFunction(
       return scrapeHtml(url);
     });
 
-    // Steps 3-7: Each individually for Inngest durability
+    // Steps 3-5: Fetch external data (each is fast, < 10s)
     const seoData = await step.run("fetch-seo-data", async () => {
       const seoProvider = await createSeoProvider();
       return seoProvider.getDomainOverview(domain);
@@ -236,21 +245,107 @@ export const runFullAudit = inngest.createFunction(
       return seoProvider.getCompetitors(domain);
     });
 
-    const scoredItems = await step.run("score-core-eeat-full", async () => {
-      return scoreItems(html, url, "full", quality);
+    // Steps 6-13: Score CORE-EEAT — one step per dimension (8 dimensions)
+    // Each step = 1 LLM call ≤ 10s, compatible with Vercel Hobby timeout
+    const coreEeatDimensions = getCoreEeatDimensions("full");
+    const scoredItems: any[] = [];
+    for (const dim of coreEeatDimensions) {
+      const dimItems = await step.run(`score-core-eeat-${dim}`, async () => {
+        return scoreOneDimension(html, url, dim, "full", quality);
+      });
+      scoredItems.push(...dimItems);
+    }
+
+    // Steps 14-17: Score CITE — one step per dimension (4 dimensions)
+    const citeDimensions = getCiteDimensions("full");
+    const citeItems: any[] = [];
+    for (const dim of citeDimensions) {
+      const dimItems = await step.run(`score-cite-${dim}`, async () => {
+        return scoreOneCiteDimension(html, url, dim, "full", quality);
+      });
+      citeItems.push(...dimItems);
+    }
+
+    // ── Site Audit Steps: Technical checks (no LLM, fast) ──
+
+    // Step: Crawl page + robots.txt (uses Cheerio, ~2-5s)
+    const fullUrl = url.startsWith("http") ? url : `https://${url}`;
+    const crawlResult = await step.run("siteaudit-crawl", async () => {
+      const [crawl, robots] = await Promise.all([
+        crawlUrl(fullUrl),
+        checkRobotsTxt(fullUrl),
+      ]);
+      // Return serializable data (no $ cheerio object)
+      const { html: _h, ...crawlData } = crawl;
+      return { crawl: crawlData, robots };
     });
 
-    const citeItems = await step.run("score-cite-full", async () => {
-      return scoreCiteItems(html, url, "full", quality);
+    // Step: SEO technical checks (pure computation, instant)
+    const seoTechResult = await step.run("siteaudit-seo-checks", async () => {
+      // Re-crawl needed since CrawlResult has transient data
+      const crawl = await crawlUrl(fullUrl);
+      const robots = crawlResult.robots;
+      return runSeoChecks(crawl, robots);
     });
 
-    // Step 8: Generate action plan
+    // Step: PageSpeed Insights (external API, ~10-20s)
+    const perfResult = await step.run("siteaudit-pagespeed", async () => {
+      try {
+        return await getPageSpeedScore(fullUrl);
+      } catch (e: any) {
+        console.warn(`[audit:${auditId}] PageSpeed failed:`, e.message);
+        return { mobile: { score: 0, lcp: 0, cls: 0, fid: 0, ttfb: 0, fcp: 0, mobile_score: 0, desktop_score: 0 }, desktop: { score: 0, lcp: 0, cls: 0, fid: 0, ttfb: 0, fcp: 0, mobile_score: 0, desktop_score: 0 }, score: 0 };
+      }
+    });
+
+    // Step: Readability + accessibility (pure computation)
+    const readabilityResult = await step.run("siteaudit-readability", async () => {
+      const readabilityData = analyzeReadability(crawlResult.crawl.bodyText || "");
+      // Basic accessibility checks from crawl data
+      const violations: AccessibilityViolation[] = [];
+      const imagesWithoutAlt = (crawlResult.crawl.images || []).filter(
+        (img: any) => !img.alt || img.alt.trim() === ""
+      );
+      if (imagesWithoutAlt.length > 0) {
+        violations.push({
+          id: "image-alt",
+          impact: "serious",
+          description: `${imagesWithoutAlt.length} image(s) sans attribut alt`,
+          nodes_count: imagesWithoutAlt.length,
+          wcag_criteria: "WCAG 2.1 AA 1.1.1",
+        });
+      }
+      const accessibilityScore = accessibilityViolationsToScore(violations);
+      const readabilityScore = readabilityToScore(readabilityData.flesch_score, readabilityData.word_count);
+      return { readabilityData, violations, accessibilityScore, readabilityScore };
+    });
+
+    // Step: Compute Site Audit composite scores + generate technical recommendations
+    const siteAuditData = await step.run("siteaudit-aggregate", async () => {
+      const scores = {
+        seo: seoTechResult.score,
+        performance: perfResult.score,
+        accessibility: readabilityResult.accessibilityScore,
+        readability: readabilityResult.readabilityScore,
+      };
+      const globalTechScore = computeGlobalScore(scores);
+      const techRecommendations = generateRecommendations(
+        seoTechResult.checks as any,
+        perfResult.mobile as any,
+        readabilityResult.violations as any,
+        scores
+      );
+      return { scores, globalTechScore, techRecommendations };
+    });
+
+    // ── Generate action plan (LLM) — now includes Site Audit context ──
+
     const allScoredItems = [...scoredItems, ...citeItems];
     const actions = await step.run("generate-action-plan", async () => {
       return generateActionPlan(allScoredItems, seoData as SeoData, geoData as GeoData, url, quality);
     });
 
-    // Step 9: Save all results
+    // Save all results
     await step.run("save-results", async () => {
       const supabase = createServiceClient();
 
@@ -261,6 +356,35 @@ export const runFullAudit = inngest.createFunction(
 
       const seoProvider = await createSeoProvider();
 
+      // Enrich seo_data with Site Audit technical checks
+      const enrichedSeoData = {
+        ...(seoData as any),
+        technical_checks: seoTechResult.checks,
+        schema_detail: seoTechResult.schemaData,
+        readability: {
+          flesch_score: readabilityResult.readabilityData.flesch_score,
+          flesch_level: readabilityResult.readabilityData.flesch_level,
+          lang_detected: readabilityResult.readabilityData.lang_detected,
+          avg_sentence_length: readabilityResult.readabilityData.avg_sentence_length,
+          avg_word_length: readabilityResult.readabilityData.avg_word_length,
+          word_count: readabilityResult.readabilityData.word_count,
+        },
+        has_https: crawlResult.crawl.url?.startsWith("https://") ?? false,
+        has_viewport: crawlResult.crawl.hasViewport ?? false,
+        has_canonical: !!crawlResult.crawl.canonicalUrl,
+        canonical_url: crawlResult.crawl.canonicalUrl ?? null,
+        has_robots_txt: crawlResult.robots.exists,
+        has_sitemap: crawlResult.robots.hasSitemap,
+        sitemap_url: crawlResult.robots.sitemapUrl ?? null,
+        hreflang_tags: crawlResult.crawl.hreflang || [],
+        meta_title_length: crawlResult.crawl.title?.length ?? null,
+        meta_description_length: crawlResult.crawl.metaDescription?.length ?? null,
+        // Site Audit composite scores
+        site_audit_scores: siteAuditData.scores,
+        site_audit_global: siteAuditData.globalTechScore,
+        performance_data: perfResult,
+      };
+
       const { error: scoresError } = await supabase.from("audit_scores").insert({
         audit_id: auditId,
         score_seo: scoreSeo,
@@ -268,7 +392,7 @@ export const runFullAudit = inngest.createFunction(
         score_core_eeat: coreEeatScores,
         score_cite: citeScores,
         seo_provider: seoProvider.name,
-        seo_data: seoData,
+        seo_data: enrichedSeoData,
         geo_provider: process.env.GEO_PROVIDER || "direct_ai",
         geo_data: geoData,
         competitors,
@@ -293,9 +417,21 @@ export const runFullAudit = inngest.createFunction(
         }
       }
 
-      if (actions.length > 0) {
+      // Merge LLM-generated actions with Site Audit technical recommendations
+      const techActions = siteAuditData.techRecommendations.map((rec: any) => ({
+        priority: rec.priority === "critical" ? "P1" : rec.priority === "high" ? "P2" : rec.priority === "medium" ? "P3" : "P4",
+        title: rec.title,
+        description: `${rec.description}\n\nAction : ${rec.action}`,
+        impact_points: rec.impact_points,
+        effort: rec.effort === "low" ? "< 1h" : rec.effort === "medium" ? "1-2 jours" : "1 semaine",
+        category: rec.dimension === "geo" ? "GEO" : rec.dimension === "performance" ? "technique" : rec.dimension === "accessibility" ? "technique" : "SEO",
+      }));
+
+      const allActions = [...actions, ...techActions];
+
+      if (allActions.length > 0) {
         const { error: actionsError } = await supabase.from("audit_actions").insert(
-          actions.map((action: any) => ({
+          allActions.map((action: any) => ({
             audit_id: auditId,
             ...action,
           }))

@@ -123,6 +123,55 @@ export async function scoreItems(
   return results;
 }
 
+/**
+ * Score a single CORE-EEAT dimension — exported for Inngest step-per-dimension pattern.
+ */
+export async function scoreOneDimension(
+  html: string,
+  url: string,
+  dimension: string,
+  mode: "express" | "full",
+  quality: QualityLevel = "standard"
+): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
+  const allItems = mode === "express" ? EXPRESS_ITEMS : CORE_EEAT_ITEMS;
+  const dimensionItems = allItems.filter((i) => i.dimension === dimension);
+  if (dimensionItems.length === 0) return [];
+
+  const config = QUALITY_CONFIG[quality];
+  return scoreDimension(html, url, dimension as CoreEeatDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring);
+}
+
+/**
+ * Score a single CITE dimension — exported for Inngest step-per-dimension pattern.
+ */
+export async function scoreOneCiteDimension(
+  html: string,
+  url: string,
+  dimension: string,
+  mode: "express" | "full",
+  quality: QualityLevel = "standard"
+): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
+  const allItems = mode === "express" ? CITE_EXPRESS_ITEMS : CITE_ITEMS;
+  const dimensionItems = allItems.filter((i) => i.dimension === dimension);
+  if (dimensionItems.length === 0) return [];
+
+  const config = QUALITY_CONFIG[quality];
+  return scoreCiteDimension(html, url, dimension as CiteDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring);
+}
+
+/**
+ * Get all unique dimensions for a given mode/framework.
+ */
+export function getCoreEeatDimensions(mode: "express" | "full"): string[] {
+  const items = mode === "express" ? EXPRESS_ITEMS : CORE_EEAT_ITEMS;
+  return [...new Set(items.map((i) => i.dimension))];
+}
+
+export function getCiteDimensions(mode: "express" | "full"): string[] {
+  const items = mode === "express" ? CITE_EXPRESS_ITEMS : CITE_ITEMS;
+  return [...new Set(items.map((i) => i.dimension))];
+}
+
 async function scoreDimension(
   html: string,
   url: string,

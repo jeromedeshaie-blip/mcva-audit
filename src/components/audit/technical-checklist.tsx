@@ -135,6 +135,52 @@ export function TechnicalChecklist({ seoData }: TechnicalChecklistProps) {
         </Card>
       )}
 
+      {/* Performance (Core Web Vitals) */}
+      {(seoData as any).performance_data && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Performance (Core Web Vitals)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <ReadabilityMetric
+                label="Score Mobile"
+                value={`${(seoData as any).performance_data.mobile?.score ?? 0}/100`}
+                sub={(seoData as any).performance_data.mobile?.score >= 90 ? "Excellent" : (seoData as any).performance_data.mobile?.score >= 50 ? "A ameliorer" : "Critique"}
+              />
+              <ReadabilityMetric
+                label="Score Desktop"
+                value={`${(seoData as any).performance_data.desktop?.score ?? 0}/100`}
+              />
+              <ReadabilityMetric
+                label="LCP"
+                value={`${Math.round(((seoData as any).performance_data.mobile?.lcp ?? 0) / 100) / 10}s`}
+                sub={(seoData as any).performance_data.mobile?.lcp <= 2500 ? "Bon" : "Lent"}
+              />
+              <ReadabilityMetric
+                label="CLS"
+                value={`${((seoData as any).performance_data.mobile?.cls ?? 0).toFixed(3)}`}
+                sub={(seoData as any).performance_data.mobile?.cls <= 0.1 ? "Bon" : "Instable"}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <ReadabilityMetric
+                label="TTFB"
+                value={`${Math.round((seoData as any).performance_data.mobile?.ttfb ?? 0)}ms`}
+              />
+              <ReadabilityMetric
+                label="FCP"
+                value={`${Math.round(((seoData as any).performance_data.mobile?.fcp ?? 0) / 100) / 10}s`}
+              />
+              <ReadabilityMetric
+                label="FID"
+                value={`${Math.round((seoData as any).performance_data.mobile?.fid ?? 0)}ms`}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Hreflang Detail */}
       {seoData.hreflang_tags && seoData.hreflang_tags.length > 0 && (
         <Card>

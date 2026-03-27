@@ -84,6 +84,20 @@ export interface SeoData {
   meta_title_length?: number | null;
   meta_description_length?: number | null;
 
+  // Site Audit composite scores (enriched in full audit)
+  site_audit_scores?: {
+    seo: number;
+    performance: number;
+    accessibility: number;
+    readability: number;
+  };
+  site_audit_global?: number;
+  performance_data?: {
+    mobile: { score: number; lcp: number; cls: number; fid: number; ttfb: number; fcp: number; mobile_score: number; desktop_score: number };
+    desktop: { score: number; lcp: number; cls: number; fid: number; ttfb: number; fcp: number; mobile_score: number; desktop_score: number };
+    score: number;
+  };
+
   // Semrush only (Palier 2) — null in Palier 1
   organic_traffic: number | null;
   organic_keywords: number | null;

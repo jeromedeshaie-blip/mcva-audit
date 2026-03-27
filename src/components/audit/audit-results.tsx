@@ -26,15 +26,37 @@ export function AuditResults({
   const totalItems = AUDIT_ITEM_COUNTS[auditType].total;
   const evaluatedItems = items.length;
 
+  // Extract Site Audit scores if available (from enriched seo_data)
+  const siteAuditScores = scores.seo_data?.site_audit_scores
+    ? {
+        seo: (scores.seo_data as any).site_audit_scores.seo ?? 0,
+        performance: (scores.seo_data as any).site_audit_scores.performance ?? 0,
+        accessibility: (scores.seo_data as any).site_audit_scores.accessibility ?? 0,
+        readability: (scores.seo_data as any).site_audit_scores.readability ?? 0,
+        global: (scores.seo_data as any).site_audit_global ?? 0,
+      }
+    : null;
+
   return (
     <div className="space-y-6">
       {/* Score Overview */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex items-center justify-center gap-12">
+          <div className="flex items-center justify-center gap-8 flex-wrap">
             <ScoreGauge score={scores.score_seo} label="Score SEO" size="lg" />
             <ScoreGauge score={scores.score_geo} label="Score GEO" size="lg" />
+            {siteAuditScores && (
+              <ScoreGauge score={siteAuditScores.global} label="Score Technique" size="lg" />
+            )}
           </div>
+          {siteAuditScores && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+              <MetricCard label="SEO Technique" value={`${siteAuditScores.seo}/100`} />
+              <MetricCard label="Performance" value={`${siteAuditScores.performance}/100`} />
+              <MetricCard label="Accessibilite" value={`${siteAuditScores.accessibility}/100`} />
+              <MetricCard label="Lisibilite" value={`${siteAuditScores.readability}/100`} />
+            </div>
+          )}
           {auditType === "express" && (
             <p className="text-center text-sm text-muted-foreground mt-4">
               8/8 dimensions analysees — {evaluatedItems} criteres sur{" "}
@@ -53,7 +75,7 @@ export function AuditResults({
           <TabsTrigger value="cite" className="flex-1">
             CITE
           </TabsTrigger>
-          {scores.seo_data?.technical_checks && (
+          {(scores.seo_data?.technical_checks || auditType === "full") && (
             <TabsTrigger value="technique" className="flex-1">
               Technique
             </TabsTrigger>
@@ -110,7 +132,7 @@ export function AuditResults({
           </Card>
         </TabsContent>
 
-        {scores.seo_data?.technical_checks && (
+        {(scores.seo_data?.technical_checks || auditType === "full") && (
           <TabsContent value="technique">
             <TechnicalChecklist seoData={scores.seo_data} />
           </TabsContent>
