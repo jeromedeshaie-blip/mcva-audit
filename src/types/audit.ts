@@ -69,6 +69,21 @@ export interface SeoData {
   page_speed_score: number | null;
   core_web_vitals: CoreWebVitals | null;
 
+  // Technical checks (enriched from SITEAUDIT spec)
+  technical_checks?: TechnicalCheck[];
+  schema_detail?: SchemaDetail;
+  readability?: ReadabilityData;
+  has_https?: boolean;
+  has_viewport?: boolean;
+  has_canonical?: boolean;
+  canonical_url?: string | null;
+  has_robots_txt?: boolean;
+  has_sitemap?: boolean;
+  sitemap_url?: string | null;
+  hreflang_tags?: { lang: string; href: string }[];
+  meta_title_length?: number | null;
+  meta_description_length?: number | null;
+
   // Semrush only (Palier 2) — null in Palier 1
   organic_traffic: number | null;
   organic_keywords: number | null;
@@ -76,6 +91,38 @@ export interface SeoData {
   backlinks_total: number | null;
   referring_domains: number | null;
   top_keywords: TopKeyword[] | null;
+}
+
+// --- Technical Audit Checks ---
+
+export type TechCheckStatus = "pass" | "warn" | "fail";
+
+export interface TechnicalCheck {
+  id: string;
+  label: string;
+  status: TechCheckStatus;
+  value?: string;
+  expected?: string;
+  impact: "seo" | "geo" | "both";
+  description?: string;
+}
+
+export interface SchemaDetail {
+  schemas_found: string[];
+  has_local_business: boolean;
+  has_faq: boolean;
+  has_breadcrumb: boolean;
+  has_website: boolean;
+  issues: string[];
+}
+
+export interface ReadabilityData {
+  flesch_score: number;
+  flesch_level: string;
+  lang_detected: string;
+  avg_sentence_length: number;
+  avg_word_length: number;
+  word_count: number;
 }
 
 export interface CoreWebVitals {

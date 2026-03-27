@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScoreGauge } from "./score-gauge";
 import { DimensionBar } from "./dimension-bar";
+import { TechnicalChecklist } from "./technical-checklist";
 import type { AuditScores, AuditItem, AuditAction } from "@/types/audit";
 import { AUDIT_ITEM_COUNTS } from "@/lib/constants";
 
@@ -52,6 +53,11 @@ export function AuditResults({
           <TabsTrigger value="cite" className="flex-1">
             CITE
           </TabsTrigger>
+          {scores.seo_data?.technical_checks && (
+            <TabsTrigger value="technique" className="flex-1">
+              Technique
+            </TabsTrigger>
+          )}
           {actions.length > 0 && (
             <TabsTrigger value="actions" className="flex-1">
               Plan d&apos;action
@@ -103,6 +109,12 @@ export function AuditResults({
             </CardContent>
           </Card>
         </TabsContent>
+
+        {scores.seo_data?.technical_checks && (
+          <TabsContent value="technique">
+            <TechnicalChecklist seoData={scores.seo_data} />
+          </TabsContent>
+        )}
 
         {actions.length > 0 && (
           <TabsContent value="actions">
