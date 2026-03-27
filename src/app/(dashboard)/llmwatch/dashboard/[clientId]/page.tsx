@@ -152,7 +152,7 @@ export default function LlmWatchDashboard({
           </CardHeader>
           <CardContent>
             {latestScore?.score_by_llm ? (
-              <LlmBreakdown scoreByLlm={latestScore.score_by_llm} />
+              <LlmBreakdown scoreByLlm={typeof latestScore.score_by_llm === "string" ? JSON.parse(latestScore.score_by_llm) : latestScore.score_by_llm} />
             ) : (
               <p className="text-sm text-muted-foreground">Pas de donnees</p>
             )}
