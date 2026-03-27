@@ -14,6 +14,7 @@ from supabase import create_client
 from collector import collect_for_client
 from scorer import compute_and_store_scores
 from alert_detector import check_alerts
+from recommender import generate_recommendations
 
 supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
 
@@ -38,6 +39,7 @@ def run_weekly_collection(client_id: str = None):
             collect_for_client(client["id"])
             compute_and_store_scores(client["id"])
             check_alerts(client["id"])
+            generate_recommendations(client["id"])
         except Exception as e:
             print(f"[ERROR] Échec pour {client['name']}: {e}")
 

@@ -76,6 +76,19 @@ export interface LlmWatchReport {
   created_at: string;
 }
 
+export interface LlmWatchRecommendation {
+  id: string;
+  client_id: string;
+  week_start: string;
+  priority: number; // 1=haute, 2=moyenne, 3=basse
+  category: "content" | "technical" | "brand" | "competitive" | "multilingual";
+  title: string;
+  description: string;
+  impact: "high" | "medium" | "low";
+  effort: "low" | "medium" | "high";
+  created_at: string;
+}
+
 export interface LlmWatchAlert {
   id: string;
   client_id: string;
