@@ -19,25 +19,25 @@ def check_alerts(client_id: str):
     last_week = this_week - timedelta(weeks=1)
 
     # Score client cette semaine vs semaine précédente
-    current = (
+    current_res = (
         supabase.table("llmwatch_scores")
         .select("score")
         .eq("client_id", client_id)
         .eq("week_start", this_week.isoformat())
-        .single()
+        .limit(1)
         .execute()
-        .data
     )
+    current = current_res.data[0] if current_res.data else None
 
-    previous = (
+    previous_res = (
         supabase.table("llmwatch_scores")
         .select("score")
         .eq("client_id", client_id)
         .eq("week_start", last_week.isoformat())
-        .single()
+        .limit(1)
         .execute()
-        .data
     )
+    previous = previous_res.data[0] if previous_res.data else None
 
     alerts_to_insert = []
 
@@ -66,25 +66,25 @@ def check_alerts(client_id: str):
     )
 
     for comp in competitors or []:
-        comp_current = (
+        comp_current_res = (
             supabase.table("llmwatch_competitor_scores")
             .select("score")
             .eq("competitor_id", comp["id"])
             .eq("week_start", this_week.isoformat())
-            .maybeSingle()
+            .limit(1)
             .execute()
-            .data
         )
+        comp_current = comp_current_res.data[0] if comp_current_res.data else None
 
-        comp_previous = (
+        comp_previous_res = (
             supabase.table("llmwatch_competitor_scores")
             .select("score")
             .eq("competitor_id", comp["id"])
             .eq("week_start", last_week.isoformat())
-            .maybeSingle()
+            .limit(1)
             .execute()
-            .data
         )
+        comp_previous = comp_previous_res.data[0] if comp_previous_res.data else None
 
         if comp_current and comp_previous:
             delta = float(comp_current["score"]) - float(comp_previous["score"])

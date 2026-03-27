@@ -75,9 +75,7 @@ LLM_FUNCTIONS = {
 }
 
 
-def detect_citation(
-    response: str, client_name: str, keywords: list[str] = None
-) -> tuple[bool, int | None, str | None]:
+def detect_citation(response, client_name, keywords=None):
     """
     Détecte si le client est cité dans la réponse LLM.
     Retourne (cited, rank, snippet).

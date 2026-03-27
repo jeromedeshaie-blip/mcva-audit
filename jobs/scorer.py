@@ -19,7 +19,7 @@ LLM_WEIGHTS = {
 }
 
 
-def rank_score(rank: int | None) -> float:
+def rank_score(rank):
     if not rank:
         return 0
     weights = {1: 1.0, 2: 0.75, 3: 0.5}
@@ -94,7 +94,7 @@ def compute_and_store_scores(client_id: str):
         100,
     )
 
-    # Upsert score
+    # Upsert score (on_conflict on unique constraint)
     supabase.table("llmwatch_scores").upsert(
         {
             "client_id": client_id,
@@ -103,7 +103,8 @@ def compute_and_store_scores(client_id: str):
             "score_by_llm": json.dumps(score_by_llm),
             "score_by_lang": json.dumps(score_by_lang),
             "citation_rate": round(citation_rate, 2),
-        }
+        },
+        on_conflict="client_id,week_start",
     ).execute()
 
     print(f"[SCORER] Score {score}/100 pour {client_id} (semaine {week_start})")
@@ -182,7 +183,8 @@ def _score_competitors(client_id: str, week_start: date, raw_results: list):
                 "week_start": week_start.isoformat(),
                 "score": comp_score,
                 "score_by_llm": json.dumps(score_by_llm),
-            }
+            },
+            on_conflict="competitor_id,week_start",
         ).execute()
 
         print(f"[SCORER] Concurrent {comp['name']}: {comp_score}/100")
