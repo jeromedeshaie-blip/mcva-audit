@@ -624,22 +624,12 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
 
   try {
     const anthropic = new Anthropic();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    let message;
-    try {
-      message = await anthropic.messages.create(
-        {
-          model: config.scoringModel,
-          max_tokens: 4000,
-          temperature: 0.2, // Slight creativity for better recommendations
-          messages: [{ role: "user", content: prompt }],
-        },
-        { signal: controller.signal }
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
+    const message = await anthropic.messages.create({
+      model: config.scoringModel,
+      max_tokens: 4000,
+      temperature: 0.2, // Slight creativity for better recommendations
+      messages: [{ role: "user", content: prompt }],
+    });
 
     const textBlock = message.content[0];
     const text = textBlock && textBlock.type === "text" ? textBlock.text : "";

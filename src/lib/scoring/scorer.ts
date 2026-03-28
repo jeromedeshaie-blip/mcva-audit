@@ -223,22 +223,12 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
 
   const anthropic = createAnthropicClient();
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-  let message;
-  try {
-    message = await anthropic.messages.create(
-      {
-        model,
-        max_tokens: maxTokens,
-        temperature: 0,
-        messages: [{ role: "user", content: prompt }],
-      },
-      { signal: controller.signal }
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
+  const message = await anthropic.messages.create({
+    model,
+    max_tokens: maxTokens,
+    temperature: 0,
+    messages: [{ role: "user", content: prompt }],
+  });
 
   const textBlock = message.content[0];
   const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
@@ -408,22 +398,12 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
 
   const anthropic = createAnthropicClient();
 
-  const citeController = new AbortController();
-  const citeTimeout = setTimeout(() => citeController.abort(), 8000);
-  let message;
-  try {
-    message = await anthropic.messages.create(
-      {
-        model,
-        max_tokens: maxTokens,
-        temperature: 0,
-        messages: [{ role: "user", content: prompt }],
-      },
-      { signal: citeController.signal }
-    );
-  } finally {
-    clearTimeout(citeTimeout);
-  }
+  const message = await anthropic.messages.create({
+    model,
+    max_tokens: maxTokens,
+    temperature: 0,
+    messages: [{ role: "user", content: prompt }],
+  });
 
   const textBlock = message.content[0];
   const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
