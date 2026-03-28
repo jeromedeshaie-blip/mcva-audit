@@ -101,7 +101,7 @@ export default function DashboardPage() {
               <div>
                 <h3 className="font-heading font-bold text-lg">Audit Complet</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  120 criteres — 5-15 minutes
+                  120 criteres — 30-60 secondes
                 </p>
               </div>
               <Link href="/audit-complet">
@@ -149,14 +149,15 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-2">
               {recentAudits.map(({ audit, scores }) => (
-                <div
+                <Link
                   key={audit.id}
-                  className="flex items-center justify-between p-4 rounded-xl bg-muted/30 hover:bg-muted/60 transition-colors"
+                  href={`/audit/${audit.id}`}
+                  className="flex items-center justify-between p-4 rounded-xl bg-muted/30 hover:bg-muted/60 transition-colors cursor-pointer group"
                 >
                   <div className="flex items-center gap-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-heading font-semibold">{audit.domain}</span>
+                        <span className="font-heading font-semibold group-hover:text-[#8B2C2C] transition-colors">{audit.domain}</span>
                         <Badge
                           variant={
                             audit.audit_type === "express"
@@ -182,21 +183,26 @@ export default function DashboardPage() {
                       </p>
                     </div>
                   </div>
-                  {scores && audit.status === "completed" && (
-                    <div className="flex items-center gap-4">
-                      <ScoreGauge
-                        score={scores.score_seo}
-                        label="SEO"
-                        size="sm"
-                      />
-                      <ScoreGauge
-                        score={scores.score_geo}
-                        label="GEO"
-                        size="sm"
-                      />
-                    </div>
-                  )}
-                </div>
+                  <div className="flex items-center gap-4">
+                    {scores && audit.status === "completed" && (
+                      <>
+                        <ScoreGauge
+                          score={scores.score_seo}
+                          label="SEO"
+                          size="sm"
+                        />
+                        <ScoreGauge
+                          score={scores.score_geo}
+                          label="GEO"
+                          size="sm"
+                        />
+                      </>
+                    )}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-muted-foreground/40 group-hover:text-[#D4553A] transition-colors ml-2">
+                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                </Link>
               ))}
             </div>
           )}
