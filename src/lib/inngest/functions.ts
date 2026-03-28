@@ -356,7 +356,12 @@ export const runFullAudit = inngest.createFunction(
 
     const allScoredItems = [...scoredItems, ...citeItems];
     const actions = await step.run("generate-action-plan", async () => {
-      return generateActionPlan(allScoredItems, seoData as SeoData, geoData as GeoData, url, quality);
+      try {
+        return await generateActionPlan(allScoredItems, seoData as SeoData, geoData as GeoData, url, quality);
+      } catch (e: any) {
+        console.error(`[audit:${auditId}] generate-action-plan failed (timeout or LLM error):`, e.message);
+        return [];
+      }
     });
 
     // ── Save results in separate steps for resilience ──
@@ -371,6 +376,7 @@ export const runFullAudit = inngest.createFunction(
       const seoProvider = await createSeoProvider();
 
       // Enrich seo_data with Site Audit technical checks
+      // Strip large crawl data (bodyText, full link/image arrays) to keep JSONB payload small
       const enrichedSeoData = {
         ...(seoData as any),
         technical_checks: (seoTechResult as any)?.checks || [],
@@ -390,7 +396,7 @@ export const runFullAudit = inngest.createFunction(
         has_robots_txt: crawlResult.robots.exists,
         has_sitemap: crawlResult.robots.hasSitemap,
         sitemap_url: crawlResult.robots.sitemapUrl ?? null,
-        hreflang_tags: crawlResult.crawl.hreflang || [],
+        hreflang_tags: (crawlResult.crawl.hreflang || []).slice(0, 10),
         meta_title_length: crawlResult.crawl.title?.length ?? null,
         meta_description_length: crawlResult.crawl.metaDescription?.length ?? null,
         site_audit_scores: siteAuditData?.scores || null,
@@ -618,12 +624,22 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
 
   try {
     const anthropic = new Anthropic();
-    const message = await anthropic.messages.create({
-      model: config.scoringModel,
-      max_tokens: 4000,
-      temperature: 0.2, // Slight creativity for better recommendations
-      messages: [{ role: "user", content: prompt }],
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let message;
+    try {
+      message = await anthropic.messages.create(
+        {
+          model: config.scoringModel,
+          max_tokens: 4000,
+          temperature: 0.2, // Slight creativity for better recommendations
+          messages: [{ role: "user", content: prompt }],
+        },
+        { signal: controller.signal }
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const textBlock = message.content[0];
     const text = textBlock && textBlock.type === "text" ? textBlock.text : "";

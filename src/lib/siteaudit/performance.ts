@@ -20,7 +20,7 @@ export async function getPageSpeedScore(url: string): Promise<{
     });
 
     const res = await fetch(`${baseUrl}?${params}`, {
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(8000),
     });
     const data = await res.json();
 
