@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useRef } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { SectorCombobox } from "@/components/ui/sector-combobox";
 import { AuditResults } from "@/components/audit/audit-results";
 import type { AuditScores, AuditItem, AuditAction } from "@/types/audit";
-import { POLLING_TIMEOUT_MS, QUALITY_LEVELS } from "@/lib/constants";
+import { QUALITY_LEVELS } from "@/lib/constants";
 import type { QualityLevel } from "@/types/audit";
 
 type AuditState = "idle" | "loading" | "polling" | "completed" | "error";
@@ -37,11 +37,28 @@ function AuditCompletContent() {
   const [auditId, setAuditId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const pollingStartedAt = useRef<number>(0);
-
   const [scores, setScores] = useState<AuditScores | null>(null);
   const [items, setItems] = useState<AuditItem[]>([]);
   const [actions, setActions] = useState<AuditAction[]>([]);
+
+  // Simulated progress while the direct endpoint runs
+  useEffect(() => {
+    if (state !== "loading") return;
+    const steps = [
+      { at: 500, pct: 5 },
+      { at: 2000, pct: 15 },
+      { at: 5000, pct: 30 },
+      { at: 10000, pct: 45 },
+      { at: 18000, pct: 60 },
+      { at: 25000, pct: 72 },
+      { at: 35000, pct: 82 },
+      { at: 45000, pct: 88 },
+    ];
+    const timers = steps.map(({ at, pct }) =>
+      setTimeout(() => setProgress((p) => Math.max(p, pct)), at)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [state]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,73 +72,40 @@ function AuditCompletContent() {
     setActions([]);
 
     try {
-      const res = await fetch("/api/audit", {
+      // Use the direct (non-Inngest) endpoint for reliability
+      const res = await fetch("/api/audit-direct", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url,
           sector,
-          type: "full",
-          parent_audit_id: fromAuditId,
           quality,
         }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Erreur lors du lancement");
+        throw new Error(data.error || data.detail || "Erreur lors de l'audit");
       }
 
-      const data = await res.json();
+      // Audit completed directly — fetch full results
       setAuditId(data.audit_id);
-      setState("polling");
-      setProgress(10);
-      pollingStartedAt.current = Date.now();
+      setProgress(95);
+
+      const resultsRes = await fetch(`/api/audit?id=${data.audit_id}`);
+      const results = await resultsRes.json();
+
+      setScores(results.scores);
+      setItems(results.items || []);
+      setActions(results.actions || []);
+      setState("completed");
+      setProgress(100);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
       setState("error");
     }
   };
-
-  const pollResults = useCallback(async () => {
-    if (!auditId || state !== "polling") return;
-
-    // Timeout check
-    if (Date.now() - pollingStartedAt.current > POLLING_TIMEOUT_MS.full) {
-      setError("L'audit a pris trop de temps. Veuillez réessayer.");
-      setState("error");
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/audit?id=${auditId}`);
-      if (!res.ok) return;
-
-      const data = await res.json();
-
-      if (data.audit?.status === "completed") {
-        setScores(data.scores);
-        setItems(data.items || []);
-        setActions(data.actions || []);
-        setState("completed");
-        setProgress(100);
-      } else if (data.audit?.status === "error") {
-        setError("L'audit a echoue. Veuillez reessayer.");
-        setState("error");
-      } else {
-        setProgress((p) => Math.min(p + 5, 90));
-      }
-    } catch {
-      // Ignore polling errors
-    }
-  }, [auditId, state]);
-
-  useEffect(() => {
-    if (state !== "polling") return;
-
-    const interval = setInterval(pollResults, 4000);
-    return () => clearInterval(interval);
-  }, [state, pollResults]);
 
   return (
     <div className="space-y-6">
@@ -243,7 +227,7 @@ function AuditCompletContent() {
               </div>
               <Progress value={progress} />
               <p className="text-xs text-muted-foreground">
-                Temps estime : 5-15 minutes
+                Temps estime : 30-60 secondes
               </p>
             </div>
           </CardContent>
