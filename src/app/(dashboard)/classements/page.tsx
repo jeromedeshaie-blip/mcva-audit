@@ -1,17 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { SectorCombobox, findParentGroup } from "@/components/ui/sector-combobox";
 import type { SectorRanking } from "@/types/audit";
 import { SECTORS, SECTOR_GROUPS } from "@/lib/constants";
 
@@ -20,11 +12,33 @@ export default function ClassementsPage() {
   const [rankings, setRankings] = useState<SectorRanking[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Determine if the selected value is a group or a sub-sector
+  const isGroupSelected = useMemo(
+    () => SECTOR_GROUPS.some((g) => g.value === sector),
+    [sector]
+  );
+
+  const parentGroup = useMemo(() => findParentGroup(sector), [sector]);
+
+  const sectorLabel = useMemo(() => {
+    if (isGroupSelected) {
+      return SECTOR_GROUPS.find((g) => g.value === sector)?.label ?? sector;
+    }
+    return SECTORS.find((s) => s.value === sector)?.label ?? sector;
+  }, [sector, isGroupSelected]);
+
+  const parentGroupLabel = useMemo(() => {
+    if (isGroupSelected) return null;
+    return parentGroup?.label ?? null;
+  }, [isGroupSelected, parentGroup]);
+
   useEffect(() => {
     async function fetchRankings() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/rankings?sector=${sector}`);
+        const params = new URLSearchParams({ sector });
+        if (isGroupSelected) params.set("group", "1");
+        const res = await fetch(`/api/rankings?${params}`);
         if (res.ok) {
           const data = await res.json();
           setRankings(data.rankings || []);
@@ -36,40 +50,57 @@ export default function ClassementsPage() {
       }
     }
     fetchRankings();
-  }, [sector]);
+  }, [sector, isGroupSelected]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Classements sectoriels</h1>
           <p className="text-muted-foreground mt-1">
             Benchmark SEO/GEO par secteur d&apos;activite.
           </p>
         </div>
-        <Select value={sector} onValueChange={(v) => setSector(v || sector)}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SECTOR_GROUPS.map((group) => (
-              <SelectGroup key={group.value}>
-                <SelectLabel className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">{group.label}</SelectLabel>
-                {group.subSectors.map((sub) => (
-                  <SelectItem key={sub.value} value={sub.value}>
-                    {sub.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            ))}
-          </SelectContent>
-        </Select>
+        <SectorCombobox
+          value={sector}
+          onValueChange={(v) => v && setSector(v)}
+          placeholder="Choisir un secteur"
+          allowGroupSelection
+          className="w-full sm:w-[280px]"
+        />
+      </div>
+
+      {/* Breadcrumb showing group > sub-sector */}
+      {parentGroupLabel && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => parentGroup && setSector(parentGroup.value)}
+            className="hover:text-foreground transition-colors underline-offset-2 hover:underline"
+          >
+            {parentGroupLabel}
+          </button>
+          <span>/</span>
+          <span className="text-foreground font-medium">{sectorLabel}</span>
+        </div>
+      )}
+
+      {/* Scope indicator */}
+      <div className="flex items-center gap-2">
+        <Badge variant={isGroupSelected ? "default" : "secondary"}>
+          {isGroupSelected ? "Vue secteur" : "Vue sous-secteur"}
+        </Badge>
+        {isGroupSelected && (
+          <span className="text-xs text-muted-foreground">
+            Agregation de tous les sous-secteurs de {sectorLabel}
+          </span>
+        )}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">
-            Top domaines — {SECTORS.find((s) => s.value === sector)?.label}
+            Top domaines — {sectorLabel}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -86,11 +117,14 @@ export default function ClassementsPage() {
               </p>
             </div>
           ) : (
-            <table className="w-full" aria-label={`Classement ${SECTORS.find((s) => s.value === sector)?.label}`}>
+            <table className="w-full" aria-label={`Classement ${sectorLabel}`}>
               <thead>
                 <tr className="border-b text-xs font-medium text-muted-foreground">
                   <th className="px-4 py-2 text-left w-12">#</th>
                   <th className="px-4 py-2 text-left">Domaine</th>
+                  {!isGroupSelected && (
+                    <th className="px-4 py-2 text-left">Sous-secteur</th>
+                  )}
                   <th className="px-4 py-2 text-right">Score SEO</th>
                   <th className="px-4 py-2 text-right">Score GEO</th>
                   <th className="px-4 py-2 text-right">Semaine</th>
@@ -106,6 +140,11 @@ export default function ClassementsPage() {
                       <RankBadge rank={idx + 1} />
                     </td>
                     <td className="px-4 py-3 font-medium">{r.domain}</td>
+                    {!isGroupSelected && (
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {SECTORS.find((s) => s.value === r.sector)?.label ?? r.sector}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right">
                       <ScoreCell score={r.score_seo} />
                     </td>

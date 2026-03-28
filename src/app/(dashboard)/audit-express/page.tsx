@@ -6,19 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
+import { SectorCombobox } from "@/components/ui/sector-combobox";
 import { AuditResults } from "@/components/audit/audit-results";
 import type { AuditScores, AuditItem, AuditAction } from "@/types/audit";
-import { SECTOR_GROUPS, POLLING_TIMEOUT_MS, QUALITY_LEVELS } from "@/lib/constants";
+import { POLLING_TIMEOUT_MS, QUALITY_LEVELS } from "@/lib/constants";
 import type { QualityLevel } from "@/types/audit";
 
 type AuditState = "idle" | "loading" | "polling" | "completed" | "error";
@@ -153,23 +145,12 @@ export default function AuditExpressPage() {
               </div>
               <div className="space-y-2">
                 <Label>Secteur</Label>
-                <Select value={sector} onValueChange={(v) => setSector(v || "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choisir un secteur" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SECTOR_GROUPS.map((group) => (
-                      <SelectGroup key={group.value}>
-                        <SelectLabel className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">{group.label}</SelectLabel>
-                        {group.subSectors.map((sub) => (
-                          <SelectItem key={sub.value} value={sub.value}>
-                            {sub.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SectorCombobox
+                  value={sector}
+                  onValueChange={setSector}
+                  placeholder="Choisir un secteur"
+                  disabled={state === "loading" || state === "polling"}
+                />
               </div>
             </div>
 
