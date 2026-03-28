@@ -200,17 +200,16 @@ export const runFullAudit = inngest.createFunction(
     id: "run-full-audit",
     name: "Run Full Audit",
     triggers: [{ event: "audit/full.requested" }],
-    retries: 2,
+    retries: 1,
     onFailure: async ({ event }: { event: any }) => {
-      // Inngest v4: failure event data is at event.data.event.data
       const auditId = event.data?.event?.data?.auditId
         ?? event.data?.auditId;
-      console.error(`[onFailure:run-full-audit] auditId=${auditId}, error=${event.data?.error?.message || "unknown"}`);
+      console.error(`[onFailure:run-full-audit] auditId=${auditId}, error=${JSON.stringify(event.data?.error || "unknown")}`);
       if (auditId) {
         try {
           await updateAuditStatus(auditId, "error");
         } catch (e) {
-          console.error(`[audit:${auditId}] Failed to set error status on failure:`, e);
+          console.error(`[audit:${auditId}] onFailure: could not set error status:`, e);
         }
       }
     },
@@ -224,194 +223,218 @@ export const runFullAudit = inngest.createFunction(
       quality?: string;
     };
     const quality = (rawQuality || "standard") as QualityLevel;
+    const fullUrl = url.startsWith("http") ? url : `https://${url}`;
 
-    // Step 1: Update status
-    await step.run("update-status-processing", async () => {
+    // ─── Step 1: Mark as processing ───
+    await step.run("update-status", async () => {
+      console.log(`[audit:${auditId}] Starting full audit for ${url} (quality=${quality})`);
       await updateAuditStatus(auditId, "processing");
     });
 
-    // Step 2: Scrape HTML
+    // ─── Step 2: Scrape HTML (critical — audit cannot proceed without it) ───
     const html = await step.run("scrape-html", async () => {
-      return scrapeHtml(url);
+      console.log(`[audit:${auditId}] Scraping HTML...`);
+      const h = await scrapeHtml(url);
+      console.log(`[audit:${auditId}] HTML scraped: ${h.length} chars`);
+      return h;
     });
 
-    // Steps 3-5: Fetch external data (each is fast, < 10s)
-    const seoData = await step.run("fetch-seo-data", async () => {
-      const seoProvider = await createSeoProvider();
-      return seoProvider.getDomainOverview(domain);
-    });
+    // ─── Step 3: ALL data collection in ONE step (reduces Inngest step count) ───
+    const collectedData = await step.run("collect-data", async () => {
+      console.log(`[audit:${auditId}] Collecting SEO + GEO data...`);
 
-    const geoData = await step.run("fetch-geo-data", async () => {
-      const geoProvider = await createGeoProvider();
-      const brandName = extractBrandName(html, domain);
-      return geoProvider.getAIVisibility(brandName, sector || "général", domain, quality);
-    });
+      // Run all data collection in parallel with individual try/catch
+      const [seoResult, geoResult, competitorsResult] = await Promise.allSettled([
+        (async () => {
+          const seoProvider = await createSeoProvider();
+          return seoProvider.getDomainOverview(domain);
+        })(),
+        (async () => {
+          const geoProvider = await createGeoProvider();
+          const brandName = extractBrandName(html, domain);
+          return geoProvider.getAIVisibility(brandName, sector || "général", domain, quality);
+        })(),
+        (async () => {
+          const seoProvider = await createSeoProvider();
+          return seoProvider.getCompetitors(domain);
+        })(),
+      ]);
 
-    const competitors = await step.run("fetch-competitors", async () => {
-      const seoProvider = await createSeoProvider();
-      return seoProvider.getCompetitors(domain);
-    });
+      const seoData = seoResult.status === "fulfilled" ? seoResult.value : null;
+      const geoData = geoResult.status === "fulfilled" ? geoResult.value : null;
+      const competitors = competitorsResult.status === "fulfilled" ? competitorsResult.value : null;
 
-    // Steps 6-13: Score CORE-EEAT — one step per dimension (8 dimensions)
-    // Each step = 1 LLM call ≤ 10s, compatible with Vercel Hobby timeout
-    const coreEeatDimensions = getCoreEeatDimensions("full");
-    const scoredItems: any[] = [];
-    for (const dim of coreEeatDimensions) {
-      const dimItems = await step.run(`score-core-eeat-${dim}`, async () => {
-        return scoreOneDimension(html, url, dim, "full", quality);
-      });
-      scoredItems.push(...dimItems);
-    }
+      if (seoResult.status === "rejected") console.error(`[audit:${auditId}] SEO data failed:`, seoResult.reason?.message);
+      if (geoResult.status === "rejected") console.error(`[audit:${auditId}] GEO data failed:`, geoResult.reason?.message);
 
-    // Steps 14-17: Score CITE — one step per dimension (4 dimensions)
-    const citeDimensions = getCiteDimensions("full");
-    const citeItems: any[] = [];
-    for (const dim of citeDimensions) {
-      const dimItems = await step.run(`score-cite-${dim}`, async () => {
-        return scoreOneCiteDimension(html, url, dim, "full", quality);
-      });
-      citeItems.push(...dimItems);
-    }
+      console.log(`[audit:${auditId}] Data collected: SEO=${!!seoData}, GEO=${!!geoData}`);
 
-    // ── Site Audit Steps: Technical checks (no LLM, fast) ──
-
-    // Step: Crawl page + robots.txt + SEO checks (single fetch, ~3-5s)
-    const fullUrl = url.startsWith("http") ? url : `https://${url}`;
-    const crawlAndSeoResult = await step.run("siteaudit-crawl-and-checks", async () => {
-      try {
-        const [crawl, robots] = await Promise.all([
-          crawlUrl(fullUrl),
-          checkRobotsTxt(fullUrl),
-        ]);
-        // Run SEO checks immediately while we still have the full crawl data
-        const seoChecks = runSeoChecks(crawl, robots);
-        // Strip HTML before returning (not serializable for large pages)
-        const { html: _h, ...crawlData } = crawl;
-        // Truncate bodyText to avoid Inngest payload limits (max ~4MB)
-        const truncatedCrawlData = {
-          ...crawlData,
-          bodyText: crawlData.bodyText?.substring(0, 10000) || "",
-          // Limit links/images arrays to avoid huge payloads
-          links: crawlData.links?.slice(0, 50) || [],
-          images: crawlData.images?.slice(0, 50) || [],
-        };
-        return { crawl: truncatedCrawlData, robots, seoChecks, error: null };
-      } catch (e: any) {
-        console.warn(`[audit:${auditId}] Site audit crawl failed:`, e.message);
-        return {
-          crawl: { url: fullUrl, bodyText: "", images: [], hreflang: [], schemaScripts: [], h1: [], h2: [], h3: [], links: [], title: null, metaDescription: null, canonicalUrl: null, hasViewport: false, statusCode: 0, loadTime: 0, robotsMeta: null, charset: null },
-          robots: { exists: false, hasSitemap: false, sitemapUrl: null, blocksAll: false },
-          seoChecks: { checks: [], score: 0, schemaData: { schemas_found: [], has_local_business: false, has_faq: false, has_breadcrumb: false, has_website: false, issues: [] } },
-          error: e.message,
-        };
-      }
-    });
-    const crawlResult = crawlAndSeoResult;
-    const seoTechResult = crawlAndSeoResult.seoChecks;
-
-    // Step: PageSpeed Insights (external API, ~10-20s)
-    const perfResult = await step.run("siteaudit-pagespeed", async () => {
-      try {
-        return await getPageSpeedScore(fullUrl);
-      } catch (e: any) {
-        console.warn(`[audit:${auditId}] PageSpeed failed:`, e.message);
-        return { mobile: { score: 0, lcp: 0, cls: 0, fid: 0, ttfb: 0, fcp: 0, mobile_score: 0, desktop_score: 0 }, desktop: { score: 0, lcp: 0, cls: 0, fid: 0, ttfb: 0, fcp: 0, mobile_score: 0, desktop_score: 0 }, score: 0 };
-      }
-    });
-
-    // Step: Readability + accessibility (pure computation)
-    const readabilityResult = await step.run("siteaudit-readability", async () => {
-      const readabilityData = analyzeReadability(crawlResult.crawl.bodyText || "");
-      // Basic accessibility checks from crawl data
-      const violations: AccessibilityViolation[] = [];
-      const imagesWithoutAlt = (crawlResult.crawl.images || []).filter(
-        (img: any) => !img.alt || img.alt.trim() === ""
-      );
-      if (imagesWithoutAlt.length > 0) {
-        violations.push({
-          id: "image-alt",
-          impact: "serious",
-          description: `${imagesWithoutAlt.length} image(s) sans attribut alt`,
-          nodes_count: imagesWithoutAlt.length,
-          wcag_criteria: "WCAG 2.1 AA 1.1.1",
-        });
-      }
-      const accessibilityScore = accessibilityViolationsToScore(violations);
-      const readabilityScore = readabilityToScore(readabilityData.flesch_score, readabilityData.word_count);
-      return { readabilityData, violations, accessibilityScore, readabilityScore };
-    });
-
-    // Step: Compute Site Audit composite scores + generate technical recommendations
-    const siteAuditData = await step.run("siteaudit-aggregate", async () => {
-      const scores = {
-        seo: seoTechResult.score,
-        performance: perfResult.score,
-        accessibility: readabilityResult.accessibilityScore,
-        readability: readabilityResult.readabilityScore,
+      return {
+        seoData: seoData || getEmptySeoData(),
+        geoData: geoData || getEmptyGeoData(),
+        competitors,
       };
-      const globalTechScore = computeGlobalScore(scores);
-      const techRecommendations = generateRecommendations(
-        seoTechResult.checks as any,
-        perfResult.mobile as any,
-        readabilityResult.violations as any,
-        scores
-      );
-      return { scores, globalTechScore, techRecommendations };
     });
 
-    // ── Generate action plan (LLM) — now includes Site Audit context ──
-
-    const allScoredItems = [...scoredItems, ...citeItems];
-    const actions = await step.run("generate-action-plan", async () => {
+    // ─── Step 4: CORE-EEAT scoring (ALL dimensions in ONE step) ───
+    const scoredItems = await step.run("score-core-eeat-all", async () => {
+      console.log(`[audit:${auditId}] Scoring CORE-EEAT...`);
       try {
-        return await generateActionPlan(allScoredItems, seoData as SeoData, geoData as GeoData, url, quality);
+        const items = await scoreItems(html, url, "full", quality);
+        console.log(`[audit:${auditId}] CORE-EEAT: ${items.length} items scored`);
+        return items;
       } catch (e: any) {
-        console.error(`[audit:${auditId}] generate-action-plan failed (timeout or LLM error):`, e.message);
+        console.error(`[audit:${auditId}] CORE-EEAT scoring failed:`, e.message);
         return [];
       }
     });
 
-    // ── Save results in separate steps for resilience ──
+    // ─── Step 5: CITE scoring (ALL dimensions in ONE step) ───
+    const citeItems = await step.run("score-cite-all", async () => {
+      console.log(`[audit:${auditId}] Scoring CITE...`);
+      try {
+        const items = await scoreCiteItems(html, url, "full", quality);
+        console.log(`[audit:${auditId}] CITE: ${items.length} items scored`);
+        return items;
+      } catch (e: any) {
+        console.error(`[audit:${auditId}] CITE scoring failed:`, e.message);
+        return [];
+      }
+    });
 
-    // Step: Save scores
-    await step.run("save-scores", async () => {
+    // ─── Step 6: Site Audit technical checks (ALL in ONE step, no LLM) ───
+    const siteAuditData = await step.run("siteaudit-all", async () => {
+      console.log(`[audit:${auditId}] Running site audit...`);
+      try {
+        const [crawlData, robots] = await Promise.allSettled([
+          crawlUrl(fullUrl),
+          checkRobotsTxt(fullUrl),
+        ]);
+
+        const crawl = crawlData.status === "fulfilled" ? crawlData.value : null;
+        const robotsResult = robots.status === "fulfilled" ? robots.value : { exists: false, hasSitemap: false, sitemapUrl: null, blocksAll: false };
+
+        let seoChecks = { checks: [] as any[], score: 0, schemaData: null as any };
+        if (crawl) {
+          seoChecks = runSeoChecks(crawl, robotsResult);
+        }
+
+        // PageSpeed (with short timeout)
+        let perf = { score: 0, mobile: null as any, desktop: null as any };
+        try {
+          perf = await getPageSpeedScore(fullUrl) as any;
+        } catch (e: any) {
+          console.warn(`[audit:${auditId}] PageSpeed failed:`, e.message);
+        }
+
+        // Readability
+        const bodyText = crawl?.bodyText?.substring(0, 10000) || "";
+        const readabilityData = analyzeReadability(bodyText);
+        const violations: AccessibilityViolation[] = [];
+        const noAltImages = (crawl?.images || []).filter((img: any) => !img.alt || img.alt.trim() === "");
+        if (noAltImages.length > 0) {
+          violations.push({
+            id: "image-alt", impact: "serious",
+            description: `${noAltImages.length} image(s) sans attribut alt`,
+            nodes_count: noAltImages.length, wcag_criteria: "WCAG 2.1 AA 1.1.1",
+          });
+        }
+
+        const scores = {
+          seo: seoChecks.score,
+          performance: perf.score || 0,
+          accessibility: accessibilityViolationsToScore(violations),
+          readability: readabilityToScore(readabilityData.flesch_score, readabilityData.word_count),
+        };
+        const globalTechScore = computeGlobalScore(scores);
+        const techRecommendations = generateRecommendations(
+          seoChecks.checks as any, perf.mobile as any, violations as any, scores
+        );
+
+        console.log(`[audit:${auditId}] Site audit done: global=${globalTechScore}`);
+
+        return {
+          scores,
+          globalTechScore,
+          techRecommendations,
+          seoChecks,
+          readabilityData,
+          crawlMeta: {
+            url: crawl?.url || fullUrl,
+            hasViewport: crawl?.hasViewport ?? false,
+            canonicalUrl: crawl?.canonicalUrl ?? null,
+            title: crawl?.title ?? null,
+            metaDescription: crawl?.metaDescription ?? null,
+            hreflang: (crawl?.hreflang || []).slice(0, 10),
+          },
+          robots: robotsResult,
+          performanceData: perf,
+        };
+      } catch (e: any) {
+        console.error(`[audit:${auditId}] Site audit failed entirely:`, e.message);
+        return null;
+      }
+    });
+
+    // ─── Step 7: Generate action plan (LLM, optional) ───
+    const allScoredItems = [...scoredItems, ...citeItems];
+    const actions = await step.run("generate-action-plan", async () => {
+      if (allScoredItems.length === 0) {
+        console.warn(`[audit:${auditId}] No scored items, skipping action plan`);
+        return [];
+      }
+      try {
+        console.log(`[audit:${auditId}] Generating action plan...`);
+        return await generateActionPlan(
+          allScoredItems, collectedData.seoData as SeoData, collectedData.geoData as GeoData, url, quality
+        );
+      } catch (e: any) {
+        console.error(`[audit:${auditId}] Action plan failed:`, e.message);
+        return [];
+      }
+    });
+
+    // ─── Step 8: SAVE EVERYTHING in one step (atomic, reliable) ───
+    await step.run("save-all-results", async () => {
+      console.log(`[audit:${auditId}] Saving all results...`);
       const supabase = createServiceClient();
+
       const coreEeatScores = aggregateScores(scoredItems);
       const citeScores = aggregateScores(citeItems);
       const scoreSeo = calculateSeoScore(coreEeatScores);
-      const scoreGeo = geoData.ai_visibility_score ?? 0;
+      const scoreGeo = (collectedData.geoData as any).ai_visibility_score ?? 0;
       const seoProvider = await createSeoProvider();
 
-      // Enrich seo_data with Site Audit technical checks
-      // Strip large crawl data (bodyText, full link/image arrays) to keep JSONB payload small
+      // Build enriched SEO data
       const enrichedSeoData = {
-        ...(seoData as any),
-        technical_checks: (seoTechResult as any)?.checks || [],
-        schema_detail: (seoTechResult as any)?.schemaData || null,
-        readability: readabilityResult?.readabilityData ? {
-          flesch_score: readabilityResult.readabilityData.flesch_score,
-          flesch_level: readabilityResult.readabilityData.flesch_level,
-          lang_detected: readabilityResult.readabilityData.lang_detected,
-          avg_sentence_length: readabilityResult.readabilityData.avg_sentence_length,
-          avg_word_length: readabilityResult.readabilityData.avg_word_length,
-          word_count: readabilityResult.readabilityData.word_count,
+        ...(collectedData.seoData as any),
+        technical_checks: siteAuditData?.seoChecks?.checks || [],
+        schema_detail: siteAuditData?.seoChecks?.schemaData || null,
+        readability: siteAuditData?.readabilityData ? {
+          flesch_score: siteAuditData.readabilityData.flesch_score,
+          flesch_level: siteAuditData.readabilityData.flesch_level,
+          lang_detected: siteAuditData.readabilityData.lang_detected,
+          avg_sentence_length: siteAuditData.readabilityData.avg_sentence_length,
+          avg_word_length: siteAuditData.readabilityData.avg_word_length,
+          word_count: siteAuditData.readabilityData.word_count,
         } : null,
-        has_https: crawlResult.crawl.url?.startsWith("https://") ?? false,
-        has_viewport: crawlResult.crawl.hasViewport ?? false,
-        has_canonical: !!crawlResult.crawl.canonicalUrl,
-        canonical_url: crawlResult.crawl.canonicalUrl ?? null,
-        has_robots_txt: crawlResult.robots.exists,
-        has_sitemap: crawlResult.robots.hasSitemap,
-        sitemap_url: crawlResult.robots.sitemapUrl ?? null,
-        hreflang_tags: (crawlResult.crawl.hreflang || []).slice(0, 10),
-        meta_title_length: crawlResult.crawl.title?.length ?? null,
-        meta_description_length: crawlResult.crawl.metaDescription?.length ?? null,
+        has_https: siteAuditData?.crawlMeta?.url?.startsWith("https://") ?? false,
+        has_viewport: siteAuditData?.crawlMeta?.hasViewport ?? false,
+        has_canonical: !!siteAuditData?.crawlMeta?.canonicalUrl,
+        canonical_url: siteAuditData?.crawlMeta?.canonicalUrl ?? null,
+        has_robots_txt: siteAuditData?.robots?.exists ?? false,
+        has_sitemap: siteAuditData?.robots?.hasSitemap ?? false,
+        sitemap_url: siteAuditData?.robots?.sitemapUrl ?? null,
+        hreflang_tags: siteAuditData?.crawlMeta?.hreflang || [],
+        meta_title_length: siteAuditData?.crawlMeta?.title?.length ?? null,
+        meta_description_length: siteAuditData?.crawlMeta?.metaDescription?.length ?? null,
         site_audit_scores: siteAuditData?.scores || null,
         site_audit_global: siteAuditData?.globalTechScore ?? null,
-        performance_data: perfResult || null,
+        performance_data: siteAuditData?.performanceData || null,
       };
 
-      const { error } = await supabase.from("audit_scores").insert({
+      // 1. Save scores
+      const { error: scoresErr } = await supabase.from("audit_scores").insert({
         audit_id: auditId,
         score_seo: scoreSeo,
         score_geo: scoreGeo,
@@ -420,31 +443,23 @@ export const runFullAudit = inngest.createFunction(
         seo_provider: seoProvider.name,
         seo_data: enrichedSeoData,
         geo_provider: process.env.GEO_PROVIDER || "direct_ai",
-        geo_data: geoData,
-        competitors,
+        geo_data: collectedData.geoData,
+        competitors: collectedData.competitors,
       });
-
-      if (error) {
-        console.error(`[audit:${auditId}] save-scores failed:`, error.message);
-        throw new Error(`DB insert scores: ${error.message}`);
+      if (scoresErr) {
+        console.error(`[audit:${auditId}] save scores failed:`, scoresErr.message);
+        throw new Error(`DB scores: ${scoresErr.message}`);
       }
-    });
 
-    // Step: Save items (CORE-EEAT + CITE)
-    await step.run("save-items", async () => {
-      if (allScoredItems.length === 0) return;
-      const supabase = createServiceClient();
-      const { error } = await supabase.from("audit_items").insert(
-        allScoredItems.map((item: any) => ({ audit_id: auditId, ...item }))
-      );
-      if (error) {
-        console.error(`[audit:${auditId}] save-items failed:`, error.message);
-        throw new Error(`DB insert items: ${error.message}`);
+      // 2. Save items
+      if (allScoredItems.length > 0) {
+        const { error: itemsErr } = await supabase.from("audit_items").insert(
+          allScoredItems.map((item: any) => ({ audit_id: auditId, ...item }))
+        );
+        if (itemsErr) console.error(`[audit:${auditId}] save items failed:`, itemsErr.message);
       }
-    });
 
-    // Step: Save actions (LLM + technical merged)
-    await step.run("save-actions", async () => {
+      // 3. Save actions (technical + LLM)
       const techActions = (siteAuditData?.techRecommendations || []).map((rec: any) => ({
         priority: rec.priority === "critical" ? "P1" : rec.priority === "high" ? "P2" : rec.priority === "medium" ? "P3" : "P4",
         title: rec.title,
@@ -454,34 +469,47 @@ export const runFullAudit = inngest.createFunction(
         category: rec.dimension === "geo" ? "GEO" : rec.dimension === "performance" ? "technique" : rec.dimension === "accessibility" ? "technique" : "SEO",
       }));
       const allActions = [...actions, ...techActions];
-      if (allActions.length === 0) return;
-
-      const supabase = createServiceClient();
-      const { error } = await supabase.from("audit_actions").insert(
-        allActions.map((action: any) => ({ audit_id: auditId, ...action }))
-      );
-      if (error) {
-        console.error(`[audit:${auditId}] save-actions failed:`, error.message);
-        // Don't throw — actions are nice-to-have, don't block the audit
+      if (allActions.length > 0) {
+        const { error: actErr } = await supabase.from("audit_actions").insert(
+          allActions.map((a: any) => ({ audit_id: auditId, ...a }))
+        );
+        if (actErr) console.error(`[audit:${auditId}] save actions failed:`, actErr.message);
       }
-    });
 
-    // Step: Mark audit as completed (always runs)
-    await step.run("mark-completed", async () => {
-      const supabase = createServiceClient();
-      const { error } = await supabase
+      // 4. Mark completed
+      const { error: completeErr } = await supabase
         .from("audits")
         .update({ status: "completed", completed_at: new Date().toISOString() })
         .eq("id", auditId);
-      if (error) {
-        console.error(`[audit:${auditId}] mark-completed failed:`, error.message);
-        throw new Error(`DB update status: ${error.message}`);
+      if (completeErr) {
+        throw new Error(`DB complete: ${completeErr.message}`);
       }
+
+      console.log(`[audit:${auditId}] COMPLETED — SEO=${scoreSeo}, GEO=${scoreGeo}, items=${allScoredItems.length}, actions=${allActions.length}`);
     });
 
     return { auditId, status: "completed" };
   }
 );
+
+// Helper: empty fallback data structures
+function getEmptySeoData(): SeoData {
+  return {
+    meta_title: null, meta_description: null, h1_count: 0, h2_count: 0,
+    has_schema_org: false, schema_types: [], internal_links_count: 0,
+    external_links_count: 0, images_without_alt: 0, page_speed_score: null,
+    core_web_vitals: null, organic_traffic: null, organic_keywords: null,
+    authority_score: null, backlinks_total: null, referring_domains: null,
+    top_keywords: null,
+  } as SeoData;
+}
+
+function getEmptyGeoData(): GeoData {
+  return {
+    ai_visibility_score: 0, brand_mentioned: false, brand_sentiment: "not_mentioned",
+    citation_count: 0, models_coverage: 0, models_tested: [],
+  } as GeoData;
+}
 
 // --- Helpers ---
 
