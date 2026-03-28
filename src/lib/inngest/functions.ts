@@ -280,7 +280,15 @@ export const runFullAudit = inngest.createFunction(
         const seoChecks = runSeoChecks(crawl, robots);
         // Strip HTML before returning (not serializable for large pages)
         const { html: _h, ...crawlData } = crawl;
-        return { crawl: crawlData, robots, seoChecks, error: null };
+        // Truncate bodyText to avoid Inngest payload limits (max ~4MB)
+        const truncatedCrawlData = {
+          ...crawlData,
+          bodyText: crawlData.bodyText?.substring(0, 10000) || "",
+          // Limit links/images arrays to avoid huge payloads
+          links: crawlData.links?.slice(0, 50) || [],
+          images: crawlData.images?.slice(0, 50) || [],
+        };
+        return { crawl: truncatedCrawlData, robots, seoChecks, error: null };
       } catch (e: any) {
         console.warn(`[audit:${auditId}] Site audit crawl failed:`, e.message);
         return {
@@ -351,30 +359,30 @@ export const runFullAudit = inngest.createFunction(
       return generateActionPlan(allScoredItems, seoData as SeoData, geoData as GeoData, url, quality);
     });
 
-    // Save all results
-    await step.run("save-results", async () => {
-      const supabase = createServiceClient();
+    // ── Save results in separate steps for resilience ──
 
+    // Step: Save scores
+    await step.run("save-scores", async () => {
+      const supabase = createServiceClient();
       const coreEeatScores = aggregateScores(scoredItems);
       const citeScores = aggregateScores(citeItems);
       const scoreSeo = calculateSeoScore(coreEeatScores);
       const scoreGeo = geoData.ai_visibility_score ?? 0;
-
       const seoProvider = await createSeoProvider();
 
       // Enrich seo_data with Site Audit technical checks
       const enrichedSeoData = {
         ...(seoData as any),
-        technical_checks: seoTechResult.checks,
-        schema_detail: seoTechResult.schemaData,
-        readability: {
+        technical_checks: (seoTechResult as any)?.checks || [],
+        schema_detail: (seoTechResult as any)?.schemaData || null,
+        readability: readabilityResult?.readabilityData ? {
           flesch_score: readabilityResult.readabilityData.flesch_score,
           flesch_level: readabilityResult.readabilityData.flesch_level,
           lang_detected: readabilityResult.readabilityData.lang_detected,
           avg_sentence_length: readabilityResult.readabilityData.avg_sentence_length,
           avg_word_length: readabilityResult.readabilityData.avg_word_length,
           word_count: readabilityResult.readabilityData.word_count,
-        },
+        } : null,
         has_https: crawlResult.crawl.url?.startsWith("https://") ?? false,
         has_viewport: crawlResult.crawl.hasViewport ?? false,
         has_canonical: !!crawlResult.crawl.canonicalUrl,
@@ -385,13 +393,12 @@ export const runFullAudit = inngest.createFunction(
         hreflang_tags: crawlResult.crawl.hreflang || [],
         meta_title_length: crawlResult.crawl.title?.length ?? null,
         meta_description_length: crawlResult.crawl.metaDescription?.length ?? null,
-        // Site Audit composite scores
-        site_audit_scores: siteAuditData.scores,
-        site_audit_global: siteAuditData.globalTechScore,
-        performance_data: perfResult,
+        site_audit_scores: siteAuditData?.scores || null,
+        site_audit_global: siteAuditData?.globalTechScore ?? null,
+        performance_data: perfResult || null,
       };
 
-      const { error: scoresError } = await supabase.from("audit_scores").insert({
+      const { error } = await supabase.from("audit_scores").insert({
         audit_id: auditId,
         score_seo: scoreSeo,
         score_geo: scoreGeo,
@@ -404,27 +411,28 @@ export const runFullAudit = inngest.createFunction(
         competitors,
       });
 
-      if (scoresError) {
-        console.error(`[audit:${auditId}] Failed to insert scores:`, scoresError.message);
-        throw new Error(`DB insert scores failed: ${scoresError.message}`);
+      if (error) {
+        console.error(`[audit:${auditId}] save-scores failed:`, error.message);
+        throw new Error(`DB insert scores: ${error.message}`);
       }
+    });
 
-      // Save all items (CORE-EEAT + CITE)
-      if (allScoredItems.length > 0) {
-        const { error: itemsError } = await supabase.from("audit_items").insert(
-          allScoredItems.map((item: any) => ({
-            audit_id: auditId,
-            ...item,
-          }))
-        );
-        if (itemsError) {
-          console.error(`[audit:${auditId}] Failed to insert items:`, itemsError.message);
-          throw new Error(`DB insert items failed: ${itemsError.message}`);
-        }
+    // Step: Save items (CORE-EEAT + CITE)
+    await step.run("save-items", async () => {
+      if (allScoredItems.length === 0) return;
+      const supabase = createServiceClient();
+      const { error } = await supabase.from("audit_items").insert(
+        allScoredItems.map((item: any) => ({ audit_id: auditId, ...item }))
+      );
+      if (error) {
+        console.error(`[audit:${auditId}] save-items failed:`, error.message);
+        throw new Error(`DB insert items: ${error.message}`);
       }
+    });
 
-      // Merge LLM-generated actions with Site Audit technical recommendations
-      const techActions = siteAuditData.techRecommendations.map((rec: any) => ({
+    // Step: Save actions (LLM + technical merged)
+    await step.run("save-actions", async () => {
+      const techActions = (siteAuditData?.techRecommendations || []).map((rec: any) => ({
         priority: rec.priority === "critical" ? "P1" : rec.priority === "high" ? "P2" : rec.priority === "medium" ? "P3" : "P4",
         title: rec.title,
         description: `${rec.description}\n\nAction : ${rec.action}`,
@@ -432,30 +440,29 @@ export const runFullAudit = inngest.createFunction(
         effort: rec.effort === "low" ? "< 1h" : rec.effort === "medium" ? "1-2 jours" : "1 semaine",
         category: rec.dimension === "geo" ? "GEO" : rec.dimension === "performance" ? "technique" : rec.dimension === "accessibility" ? "technique" : "SEO",
       }));
-
       const allActions = [...actions, ...techActions];
+      if (allActions.length === 0) return;
 
-      if (allActions.length > 0) {
-        const { error: actionsError } = await supabase.from("audit_actions").insert(
-          allActions.map((action: any) => ({
-            audit_id: auditId,
-            ...action,
-          }))
-        );
-        if (actionsError) {
-          console.error(`[audit:${auditId}] Failed to insert actions:`, actionsError.message);
-          throw new Error(`DB insert actions failed: ${actionsError.message}`);
-        }
+      const supabase = createServiceClient();
+      const { error } = await supabase.from("audit_actions").insert(
+        allActions.map((action: any) => ({ audit_id: auditId, ...action }))
+      );
+      if (error) {
+        console.error(`[audit:${auditId}] save-actions failed:`, error.message);
+        // Don't throw — actions are nice-to-have, don't block the audit
       }
+    });
 
-      const { error: updateError } = await supabase
+    // Step: Mark audit as completed (always runs)
+    await step.run("mark-completed", async () => {
+      const supabase = createServiceClient();
+      const { error } = await supabase
         .from("audits")
         .update({ status: "completed", completed_at: new Date().toISOString() })
         .eq("id", auditId);
-
-      if (updateError) {
-        console.error(`[audit:${auditId}] Failed to complete audit:`, updateError.message);
-        throw new Error(`DB update status failed: ${updateError.message}`);
+      if (error) {
+        console.error(`[audit:${auditId}] mark-completed failed:`, error.message);
+        throw new Error(`DB update status: ${error.message}`);
       }
     });
 
