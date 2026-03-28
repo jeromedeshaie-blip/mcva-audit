@@ -7,10 +7,11 @@ interface ScoreGaugeProps {
 }
 
 function getScoreColor(score: number): string {
-  if (score >= 75) return "#22c55e"; // green
-  if (score >= 50) return "#f59e0b"; // amber
-  if (score >= 25) return "#f97316"; // orange
-  return "#ef4444"; // red
+  // MCVA spectrum: from deep Swiss Red (low) → Coral (mid) → success green (high)
+  if (score >= 75) return "#2A9D5C"; // vert succes
+  if (score >= 50) return "#D4553A"; // coral MCVA
+  if (score >= 25) return "#A83D33"; // rouge cuivre
+  return "#8B2C2C"; // Swiss Red profond
 }
 
 function getScoreLabel(score: number): string {
@@ -28,7 +29,7 @@ export function ScoreGauge({ score, label, size = "md" }: ScoreGaugeProps) {
     lg: { width: 180, stroke: 12, fontSize: 36, labelSize: 14 },
   };
 
-  const { width, stroke, fontSize, labelSize } = sizes[size];
+  const { width, stroke, fontSize } = sizes[size];
   const radius = (width - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (clampedScore / 100) * circumference;
@@ -36,51 +37,59 @@ export function ScoreGauge({ score, label, size = "md" }: ScoreGaugeProps) {
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <svg
-        width={width}
-        height={width}
-        className="-rotate-90"
-        role="img"
-        aria-label={`${label}: ${clampedScore} sur 100 — ${getScoreLabel(clampedScore)}`}
-      >
-        {/* Background circle */}
-        <circle
-          cx={width / 2}
-          cy={width / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={stroke}
-          className="text-muted"
-        />
-        {/* Score arc */}
-        <circle
-          cx={width / 2}
-          cy={width / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={stroke}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className="transition-all duration-1000 ease-out"
-        />
-        {/* Score text */}
-        <text
-          x={width / 2}
-          y={width / 2}
-          textAnchor="middle"
-          dominantBaseline="central"
-          className="rotate-90 origin-center fill-foreground font-bold"
-          style={{ fontSize }}
+      <div className="relative">
+        <svg
+          width={width}
+          height={width}
+          className="-rotate-90"
+          role="img"
+          aria-label={`${label}: ${clampedScore} sur 100 — ${getScoreLabel(clampedScore)}`}
         >
-          {clampedScore}
-        </text>
-      </svg>
+          <defs>
+            <linearGradient id={`gauge-grad-${label.replace(/\s/g, "")}`} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor={color} stopOpacity="0.4" />
+              <stop offset="100%" stopColor={color} />
+            </linearGradient>
+          </defs>
+          {/* Background circle */}
+          <circle
+            cx={width / 2}
+            cy={width / 2}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={stroke}
+            className="text-muted/60"
+          />
+          {/* Score arc */}
+          <circle
+            cx={width / 2}
+            cy={width / 2}
+            r={radius}
+            fill="none"
+            stroke={`url(#gauge-grad-${label.replace(/\s/g, "")})`}
+            strokeWidth={stroke}
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            className="transition-all duration-1000 ease-out"
+          />
+          {/* Score text */}
+          <text
+            x={width / 2}
+            y={width / 2}
+            textAnchor="middle"
+            dominantBaseline="central"
+            className="rotate-90 origin-center fill-foreground"
+            style={{ fontSize, fontFamily: "var(--font-heading)", fontWeight: 700 }}
+          >
+            {clampedScore}
+          </text>
+        </svg>
+      </div>
       <div className="text-center">
-        <p className="font-medium text-sm">{label}</p>
-        <p className="text-xs" style={{ color }}>
+        <p className="font-heading font-semibold text-sm">{label}</p>
+        <p className="text-xs font-medium" style={{ color }}>
           {getScoreLabel(score)}
         </p>
       </div>

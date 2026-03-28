@@ -116,12 +116,17 @@ export default function AuditExpressPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Audit Express</h1>
-        <p className="text-muted-foreground mt-1">
-          Score SEO + GEO en moins de 3 minutes — 20 criteres CORE-EEAT
-          analyses sur 8 dimensions.
-        </p>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0A0808] via-[#1A0F0F] to-[#2A1515] p-6 text-white">
+        <div className="absolute inset-0 opacity-10"
+          style={{ backgroundImage: "radial-gradient(circle at 80% 30%, #D4553A 0%, transparent 60%)" }}
+        />
+        <div className="relative">
+          <h1 className="font-heading text-2xl font-bold tracking-tight">Audit Express</h1>
+          <p className="text-white/60 mt-1">
+            Score SEO + GEO en moins de 3 minutes — 20 criteres CORE-EEAT
+            analyses sur 8 dimensions.
+          </p>
+        </div>
       </div>
 
       {/* Form */}
@@ -267,25 +272,22 @@ export default function AuditExpressPage() {
             auditType="express"
           />
 
-          <Card className="bg-primary/5 border-primary/20">
-            <CardContent className="pt-6 flex items-center justify-between">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#8B2C2C]/10 via-[#D4553A]/10 to-[#E8937A]/10 p-6 ring-1 ring-[#D4553A]/20">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">
+                <p className="font-heading font-semibold">
                   Passez a l&apos;audit complet
                 </p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground mt-1">
                   80 criteres CORE-EEAT + 40 criteres CITE + plan d&apos;action
                   priorise + benchmark concurrentiel
                 </p>
               </div>
-              <Button
-                variant="default"
-                onClick={() => handleLaunchFull()}
-              >
+              <Button onClick={() => handleLaunchFull()}>
                 Lancer l&apos;audit complet
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </>
       )}
     </div>

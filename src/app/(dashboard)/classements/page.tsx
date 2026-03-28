@@ -54,9 +54,9 @@ export default function ClassementsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Classements sectoriels</h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">Classements sectoriels</h1>
           <p className="text-muted-foreground mt-1">
             Benchmark SEO/GEO par secteur d&apos;activite.
           </p>
@@ -170,26 +170,30 @@ export default function ClassementsPage() {
 
 function RankBadge({ rank }: { rank: number }) {
   if (rank <= 3) {
-    const colors = ["bg-yellow-400 text-black", "bg-gray-300 text-black", "bg-amber-600 text-white"];
+    const colors = [
+      "bg-gradient-to-br from-[#D4553A] to-[#8B2C2C] text-white shadow-sm",
+      "bg-gradient-to-br from-[#E8937A] to-[#D4553A] text-white shadow-sm",
+      "bg-gradient-to-br from-[#F5C4B0] to-[#E8937A] text-[#4A1515] shadow-sm",
+    ];
     return (
       <span
-        className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${colors[rank - 1]}`}
+        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg text-xs font-bold ${colors[rank - 1]}`}
       >
         {rank}
       </span>
     );
   }
-  return <span className="text-sm text-muted-foreground ml-1">{rank}</span>;
+  return <span className="text-sm text-muted-foreground ml-1.5">{rank}</span>;
 }
 
 function ScoreCell({ score }: { score: number }) {
   const color =
     score >= 75
-      ? "text-green-600"
+      ? "text-[#2A9D5C]"
       : score >= 50
-        ? "text-amber-600"
+        ? "text-[#D4553A]"
         : score >= 25
-          ? "text-orange-600"
-          : "text-red-600";
-  return <span className={`font-bold ${color}`}>{score}</span>;
+          ? "text-[#A83D33]"
+          : "text-[#8B2C2C]";
+  return <span className={`font-bold tabular-nums ${color}`}>{score}</span>;
 }

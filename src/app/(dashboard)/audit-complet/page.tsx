@@ -125,12 +125,17 @@ function AuditCompletContent() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Audit Complet</h1>
-        <p className="text-muted-foreground mt-1">
-          80 criteres CORE-EEAT + 40 criteres CITE + plan d&apos;action
-          priorise + benchmark concurrentiel.
-        </p>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0A0808] via-[#1A0F0F] to-[#2A1515] p-6 text-white">
+        <div className="absolute inset-0 opacity-10"
+          style={{ backgroundImage: "radial-gradient(circle at 20% 70%, #D4553A 0%, transparent 60%)" }}
+        />
+        <div className="relative">
+          <h1 className="font-heading text-2xl font-bold tracking-tight">Audit Complet</h1>
+          <p className="text-white/60 mt-1">
+            80 criteres CORE-EEAT + 40 criteres CITE + plan d&apos;action
+            priorise + benchmark concurrentiel.
+          </p>
+        </div>
       </div>
 
       {/* Form */}

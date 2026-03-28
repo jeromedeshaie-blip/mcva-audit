@@ -66,8 +66,11 @@ export const runExpressAudit = inngest.createFunction(
     id: "run-express-audit",
     name: "Run Express Audit",
     triggers: [{ event: "audit/express.requested" }],
+    retries: 2,
     onFailure: async ({ event }: { event: any }) => {
-      const auditId = event.data?.event?.data?.auditId;
+      const auditId = event.data?.event?.data?.auditId
+        ?? event.data?.auditId;
+      console.error(`[onFailure:run-express-audit] auditId=${auditId}, error=${event.data?.error?.message || "unknown"}`);
       if (auditId) {
         try {
           await updateAuditStatus(auditId, "error");
@@ -197,8 +200,12 @@ export const runFullAudit = inngest.createFunction(
     id: "run-full-audit",
     name: "Run Full Audit",
     triggers: [{ event: "audit/full.requested" }],
+    retries: 2,
     onFailure: async ({ event }: { event: any }) => {
-      const auditId = event.data?.event?.data?.auditId;
+      // Inngest v4: failure event data is at event.data.event.data
+      const auditId = event.data?.event?.data?.auditId
+        ?? event.data?.auditId;
+      console.error(`[onFailure:run-full-audit] auditId=${auditId}, error=${event.data?.error?.message || "unknown"}`);
       if (auditId) {
         try {
           await updateAuditStatus(auditId, "error");

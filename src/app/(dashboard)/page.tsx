@@ -57,21 +57,33 @@ export default function DashboardPage() {
       : 0;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Tableau de bord</h1>
-        <p className="text-muted-foreground mt-1">
-          Vue d&apos;ensemble de vos audits SEO/GEO.
-        </p>
+    <div className="space-y-8">
+      {/* Hero section */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0A0808] via-[#1A0F0F] to-[#2A1515] p-8 text-white">
+        <div className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: "radial-gradient(circle at 20% 50%, #D4553A 0%, transparent 50%), radial-gradient(circle at 80% 50%, #8B2C2C 0%, transparent 50%)",
+          }}
+        />
+        <div className="relative">
+          <h1 className="font-heading text-3xl font-bold tracking-tight">
+            Tableau de bord
+          </h1>
+          <p className="text-white/60 mt-2 max-w-xl">
+            Vue d&apos;ensemble de vos audits SEO/GEO. Lancez un audit pour
+            evaluer la visibilite de votre site sur les moteurs de recherche et les IA generatives.
+          </p>
+        </div>
       </div>
 
       {/* Quick actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="hover:border-primary/50 transition-colors">
-          <CardContent className="pt-6">
+        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#F8F6F1] to-white">
+          <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#8B2C2C] to-[#D4553A]" />
+          <CardContent className="pt-6 pl-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold">Audit Express</h3>
+                <h3 className="font-heading font-bold text-lg">Audit Express</h3>
                 <p className="text-sm text-muted-foreground mt-1">
                   30 criteres — 2-3 minutes
                 </p>
@@ -82,11 +94,12 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="hover:border-primary/50 transition-colors">
-          <CardContent className="pt-6">
+        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#F8F6F1] to-white">
+          <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#D4553A] to-[#E8937A]" />
+          <CardContent className="pt-6 pl-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold">Audit Complet</h3>
+                <h3 className="font-heading font-bold text-lg">Audit Complet</h3>
                 <p className="text-sm text-muted-foreground mt-1">
                   120 criteres — 5-15 minutes
                 </p>
@@ -102,59 +115,48 @@ export default function DashboardPage() {
       {/* Stats */}
       {completedAudits.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <p className="text-3xl font-bold">{recentAudits.length}</p>
-              <p className="text-sm text-muted-foreground">Audits lances</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <p className="text-3xl font-bold">{completedAudits.length}</p>
-              <p className="text-sm text-muted-foreground">Audits termines</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <p className="text-3xl font-bold">{avgSeo}</p>
-              <p className="text-sm text-muted-foreground">Score SEO moyen</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <p className="text-3xl font-bold">{avgGeo}</p>
-              <p className="text-sm text-muted-foreground">Score GEO moyen</p>
-            </CardContent>
-          </Card>
+          <StatCard value={recentAudits.length} label="Audits lances" />
+          <StatCard value={completedAudits.length} label="Audits termines" />
+          <StatCard value={avgSeo} label="Score SEO moyen" suffix="/100" />
+          <StatCard value={avgGeo} label="Score GEO moyen" suffix="/100" />
         </div>
       )}
 
       {/* Recent audits */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Audits recents</CardTitle>
+          <CardTitle className="text-lg font-heading">Audits recents</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-sm text-muted-foreground">Chargement...</p>
+            <div className="flex items-center gap-3 py-8 justify-center">
+              <div className="w-5 h-5 rounded-full border-2 border-[#D4553A] border-t-transparent animate-spin" />
+              <p className="text-sm text-muted-foreground">Chargement...</p>
+            </div>
           ) : recentAudits.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Aucun audit pour le moment.</p>
+            <div className="text-center py-12">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#8B2C2C]/10 to-[#D4553A]/10 mx-auto mb-4 flex items-center justify-center">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-[#D4553A]">
+                  <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </div>
+              <p className="text-muted-foreground font-medium">Aucun audit pour le moment.</p>
+              <p className="text-sm text-muted-foreground mt-1">Lancez votre premier audit pour commencer.</p>
               <Link href="/audit-express">
                 <Button className="mt-4">Lancer votre premier audit</Button>
               </Link>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {recentAudits.map(({ audit, scores }) => (
                 <div
                   key={audit.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                  className="flex items-center justify-between p-4 rounded-xl bg-muted/30 hover:bg-muted/60 transition-colors"
                 >
                   <div className="flex items-center gap-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{audit.domain}</span>
+                        <span className="font-heading font-semibold">{audit.domain}</span>
                         <Badge
                           variant={
                             audit.audit_type === "express"
@@ -201,6 +203,19 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function StatCard({ value, label, suffix }: { value: number; label: string; suffix?: string }) {
+  return (
+    <Card>
+      <CardContent className="pt-6 text-center">
+        <p className="text-3xl font-heading font-bold tabular-nums">
+          {value}<span className="text-lg text-muted-foreground font-normal">{suffix}</span>
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">{label}</p>
+      </CardContent>
+    </Card>
   );
 }
 

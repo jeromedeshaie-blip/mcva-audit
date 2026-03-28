@@ -141,12 +141,27 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
   }
   html {
-    @apply font-sans;
+    @apply font-sans scroll-smooth;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-heading);
+    letter-spacing: -0.01em;
   }
 }
+
+/* MCVA Skeleton / loading pulse */
+@keyframes mcva-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+.mcva-skeleton {
+  animation: mcva-pulse 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, var(--muted) 0%, oklch(0.93 0.005 85) 50%, var(--muted) 100%);
+  background-size: 200% 100%;
+}
+
+/* Tabular nums for scores */
+.tabular-nums { font-variant-numeric: tabular-nums; }

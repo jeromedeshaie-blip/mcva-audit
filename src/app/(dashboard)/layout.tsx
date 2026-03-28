@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
   { href: "/", label: "Tableau de bord" },
@@ -61,10 +64,12 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header — dark abyss style matching mcva-site */}
-      <header className="bg-[#0A0808]">
+      <header className="bg-[#0A0808] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-16 md:h-20 flex items-center justify-between">
           <div className="flex items-center gap-8">
             {/* Tessellation Mark v2.3 + Wordmark */}
@@ -81,15 +86,24 @@ export default function DashboardLayout({
               </div>
             </Link>
             <nav className="hidden lg:flex items-center gap-5 xl:gap-6">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="text-[13px] font-display font-medium text-white/70 hover:text-white uppercase tracking-widest transition-colors whitespace-nowrap"
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {NAV_ITEMS.map((item) => {
+                const isActive = item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`text-[13px] font-display font-medium uppercase tracking-widest transition-colors whitespace-nowrap ${
+                      isActive
+                        ? "text-[#D4553A]"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
             </nav>
           </div>
           <div className="flex items-center gap-4">
@@ -100,7 +114,7 @@ export default function DashboardLayout({
         </div>
         {/* MCVA spectrum accent bar */}
         <div
-          className="h-1"
+          className="h-[3px]"
           style={{
             background: "linear-gradient(90deg, #4A1515 0%, #8B2C2C 20%, #D4553A 45%, #E8937A 65%, #F5C4B0 80%, #F8F6F1 100%)",
           }}
@@ -109,6 +123,19 @@ export default function DashboardLayout({
 
       {/* Main */}
       <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
+
+      {/* Footer */}
+      <footer className="border-t mt-16">
+        <div className="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <TessellationMark size={20} />
+            <span>MCVA Consulting SA</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Plateforme Audit SEO/GEO
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

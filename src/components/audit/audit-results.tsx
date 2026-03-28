@@ -253,20 +253,20 @@ function ActionsList({ actions }: { actions: AuditAction[] }) {
       {actions.map((action) => (
         <div
           key={action.id}
-          className="flex items-start gap-3 p-4 border rounded-lg"
+          className="flex items-start gap-3 p-4 rounded-xl bg-muted/30 ring-1 ring-foreground/5 hover:bg-muted/50 transition-colors"
         >
           <PriorityBadge priority={action.priority} />
           <div className="flex-1">
-            <h4 className="font-medium text-sm">{action.title}</h4>
-            <p className="text-xs text-muted-foreground mt-1">
+            <h4 className="font-heading font-semibold text-sm">{action.title}</h4>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
               {action.description}
             </p>
-            <div className="flex gap-4 mt-2">
-              <span className="text-xs">
-                Impact: <strong>+{action.impact_points} pts</strong>
+            <div className="flex flex-wrap gap-3 mt-2.5">
+              <span className="text-xs bg-[#2A9D5C]/10 text-[#2A9D5C] px-2 py-0.5 rounded-full font-medium">
+                +{action.impact_points} pts
               </span>
-              <span className="text-xs">
-                Effort: <strong>{action.effort}</strong>
+              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+                {action.effort}
               </span>
               <Badge variant="outline" className="text-xs">
                 {action.category}
@@ -297,14 +297,14 @@ function StatusBadge({ status }: { status: string }) {
 
 function PriorityBadge({ priority }: { priority: string }) {
   const colors: Record<string, string> = {
-    P1: "bg-red-600 text-white",
-    P2: "bg-orange-500 text-white",
-    P3: "bg-amber-400 text-black",
-    P4: "bg-gray-300 text-black",
+    P1: "bg-[#8B2C2C] text-white",
+    P2: "bg-[#D4553A] text-white",
+    P3: "bg-[#E8937A] text-white",
+    P4: "bg-[#F5C4B0] text-[#4A1515]",
   };
   return (
     <span
-      className={`inline-flex items-center justify-center w-8 h-8 rounded text-xs font-bold ${colors[priority] || colors.P4}`}
+      className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold shadow-sm ${colors[priority] || colors.P4}`}
     >
       {priority}
     </span>
@@ -313,9 +313,9 @@ function PriorityBadge({ priority }: { priority: string }) {
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="text-center p-3 bg-muted rounded-lg">
-      <p className="text-2xl font-bold">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+    <div className="text-center p-4 bg-gradient-to-b from-muted/50 to-muted rounded-xl ring-1 ring-foreground/5">
+      <p className="text-2xl font-heading font-bold tabular-nums">{value}</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
     </div>
   );
 }

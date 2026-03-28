@@ -6,28 +6,35 @@ interface DimensionBarProps {
 }
 
 const CORE_EEAT_LABELS: Record<string, string> = {
-  C: "Clarté contextuelle",
+  C: "Clarte contextuelle",
   O: "Optimisation",
-  R: "Réputation",
+  R: "Reputation",
   E: "Engagement",
-  Exp: "Expérience",
+  Exp: "Experience",
   Ept: "Expertise",
-  A: "Autorité",
+  A: "Autorite",
   T: "Confiance",
 };
 
 const CITE_LABELS: Record<string, string> = {
-  C: "Crédibilité",
+  C: "Credibilite",
   I: "Influence",
   T: "Confiance",
   E: "Engagement",
 };
 
-function getBarColor(score: number): string {
-  if (score >= 75) return "bg-green-500";
-  if (score >= 50) return "bg-amber-500";
-  if (score >= 25) return "bg-orange-500";
-  return "bg-red-500";
+function getBarGradient(score: number): string {
+  if (score >= 75) return "from-[#2A9D5C] to-[#34D399]";
+  if (score >= 50) return "from-[#D4553A] to-[#E8937A]";
+  if (score >= 25) return "from-[#A83D33] to-[#D4553A]";
+  return "from-[#6B2020] to-[#8B2C2C]";
+}
+
+function getScoreColor(score: number): string {
+  if (score >= 75) return "text-[#2A9D5C]";
+  if (score >= 50) return "text-[#D4553A]";
+  if (score >= 25) return "text-[#A83D33]";
+  return "text-[#8B2C2C]";
 }
 
 export function DimensionBar({ dimensions, type }: DimensionBarProps) {
@@ -42,19 +49,19 @@ export function DimensionBar({ dimensions, type }: DimensionBarProps) {
       {orderedKeys.map((key) => {
         const score = dimensions[key] ?? 0;
         return (
-          <div key={key} className="space-y-1">
-            <div className="flex justify-between text-sm">
+          <div key={key} className="space-y-1.5">
+            <div className="flex justify-between text-sm items-baseline">
               <span className="text-muted-foreground">
-                <span className="font-mono font-bold text-foreground mr-2">
+                <span className="font-mono font-bold text-foreground mr-2 inline-flex items-center justify-center w-8 h-5 rounded bg-muted text-xs">
                   {key}
                 </span>
-                {labels[key]}
+                <span className="ml-1">{labels[key]}</span>
               </span>
-              <span className="font-bold">{score}/100</span>
+              <span className={`font-bold tabular-nums ${getScoreColor(score)}`}>{score}</span>
             </div>
-            <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-2.5 bg-muted rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-1000 ease-out ${getBarColor(score)}`}
+                className={`h-full rounded-full bg-gradient-to-r ${getBarGradient(score)} transition-all duration-1000 ease-out`}
                 style={{ width: `${score}%` }}
               />
             </div>
