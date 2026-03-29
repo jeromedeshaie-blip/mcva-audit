@@ -9,27 +9,39 @@ import {
 import type { Audit, AuditScores, AuditItem, AuditAction } from "@/types/audit";
 
 // Use Helvetica (built-in) to avoid font download timeouts on serverless
-// TODO: Switch to Work Sans when hosting fonts locally in /public
 const FONT_FAMILY = "Helvetica";
 
-// MCVA Brand colors
+// MCVA Brand Identity v2.3
 const MCVA = {
-  red: "#8B2C2C",
-  black: "#0E0E0E",
-  white: "#FFFFFF",
-  gray: "#6B7280",
-  lightGray: "#F3F4F6",
+  // Identity
+  red: "#8B2C2C",       // Swiss Red — signature
+  coral: "#D4553A",     // CTA, accents
+  ink: "#0E0E0E",       // Texte principal
+  abyss: "#0A0808",     // Fond sombre
+  paper: "#F8F6F1",     // Fond principal
+  mist: "#F2F0EB",      // Fonds alternes
+  stone: "#E8E4DD",     // Bordures, separateurs
+  white: "#FFFFFF",     // Fond cards
+  // Spectre
+  gradAbyss: "#4A1515",
+  blush: "#E8937A",
+  peach: "#F5C4B0",
+  // Fonctionnelles (scores)
   green: "#22C55E",
   amber: "#F59E0B",
   orange: "#F97316",
-  redScore: "#EF4444",
+  redAlert: "#EF4444",
+  // Neutres
+  gray: "#6B7280",
+  grayLight: "#F3F4F6",
 };
 
 const styles = StyleSheet.create({
   page: {
     fontFamily: FONT_FAMILY,
     fontSize: 10,
-    color: MCVA.black,
+    color: MCVA.ink,
+    backgroundColor: MCVA.white,
     paddingTop: 60,
     paddingBottom: 60,
     paddingHorizontal: 50,
@@ -39,7 +51,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: 20,
   },
   logo: {
     flexDirection: "row",
@@ -57,13 +69,20 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 14,
     fontWeight: 700,
-    color: MCVA.black,
+    letterSpacing: 0.8,
+    color: MCVA.ink,
+  },
+  logoSub: {
+    fontSize: 7,
+    fontWeight: 500,
+    letterSpacing: 2,
+    color: MCVA.gray,
   },
   headerDate: {
     fontSize: 9,
     color: MCVA.gray,
   },
-  // Accent bar
+  // Accent bar — Swiss Red to Coral gradient approximation
   accentBar: {
     height: 4,
     backgroundColor: MCVA.red,
@@ -73,26 +92,38 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: 700,
-    color: MCVA.black,
+    color: MCVA.ink,
     marginBottom: 4,
+    letterSpacing: -0.4,
   },
   subtitle: {
     fontSize: 12,
+    fontWeight: 400,
     color: MCVA.gray,
     marginBottom: 24,
+  },
+  // Eyebrow (section label)
+  eyebrow: {
+    fontSize: 8,
+    fontWeight: 600,
+    letterSpacing: 2.4,
+    color: MCVA.red,
+    marginBottom: 6,
   },
   // Scores section
   scoresRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 40,
+    gap: 30,
     marginBottom: 30,
   },
   scoreBox: {
     alignItems: "center",
     padding: 16,
     borderRadius: 8,
-    backgroundColor: MCVA.lightGray,
+    backgroundColor: MCVA.mist,
+    borderWidth: 0.5,
+    borderColor: MCVA.stone,
     width: 140,
   },
   scoreValue: {
@@ -100,9 +131,11 @@ const styles = StyleSheet.create({
     fontWeight: 700,
   },
   scoreLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 600,
     marginTop: 4,
+    letterSpacing: 0.5,
+    color: MCVA.ink,
   },
   scoreQuality: {
     fontSize: 9,
@@ -112,9 +145,10 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: 700,
-    color: MCVA.black,
+    color: MCVA.ink,
     marginBottom: 12,
     marginTop: 20,
+    letterSpacing: -0.2,
   },
   // Dimension bars
   dimensionRow: {
@@ -129,11 +163,12 @@ const styles = StyleSheet.create({
   dimensionCode: {
     fontWeight: 700,
     marginRight: 6,
+    color: MCVA.red,
   },
   dimensionBarBg: {
     flex: 1,
     height: 8,
-    backgroundColor: MCVA.lightGray,
+    backgroundColor: MCVA.mist,
     borderRadius: 4,
     marginRight: 8,
   },
@@ -144,7 +179,7 @@ const styles = StyleSheet.create({
   dimensionScore: {
     width: 30,
     fontSize: 9,
-    fontWeight: 600,
+    fontWeight: 700,
     textAlign: "right",
   },
   // Items
@@ -153,10 +188,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: MCVA.stone,
   },
   itemCode: {
-    width: 35,
+    width: 40,
     fontSize: 8,
     color: MCVA.gray,
     fontWeight: 600,
@@ -168,13 +203,13 @@ const styles = StyleSheet.create({
   itemStatus: {
     width: 30,
     fontSize: 8,
-    fontWeight: 600,
+    fontWeight: 700,
     textAlign: "center",
   },
   itemScore: {
     width: 25,
     fontSize: 8,
-    fontWeight: 600,
+    fontWeight: 700,
     textAlign: "right",
   },
   // Footer
@@ -192,10 +227,10 @@ const styles = StyleSheet.create({
   ctaBox: {
     marginTop: 24,
     padding: 16,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: MCVA.mist,
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: MCVA.red,
+    borderLeftColor: MCVA.coral,
   },
   ctaTitle: {
     fontSize: 11,
@@ -206,14 +241,15 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: 9,
     color: MCVA.gray,
+    lineHeight: 1.5,
   },
   // Action Plan
   actionCard: {
     marginBottom: 10,
     padding: 12,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 0.5,
-    borderColor: "#E5E7EB",
+    borderColor: MCVA.stone,
     backgroundColor: MCVA.white,
   },
   actionHeader: {
@@ -233,7 +269,7 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 10,
     fontWeight: 700,
-    color: MCVA.black,
+    color: MCVA.ink,
     flex: 1,
   },
   actionDescription: {
@@ -253,15 +289,16 @@ const styles = StyleSheet.create({
   },
   actionMetaValue: {
     fontWeight: 700,
-    color: MCVA.black,
+    color: MCVA.ink,
   },
   actionCategoryBadge: {
     paddingHorizontal: 5,
     paddingVertical: 1.5,
-    borderRadius: 3,
+    borderRadius: 10,
     fontSize: 7,
-    backgroundColor: MCVA.lightGray,
-    color: MCVA.gray,
+    backgroundColor: MCVA.mist,
+    color: MCVA.red,
+    fontWeight: 600,
   },
   // Summary box for action plan header
   actionSummaryBox: {
@@ -269,8 +306,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between" as const,
     marginBottom: 16,
     padding: 12,
-    backgroundColor: MCVA.lightGray,
-    borderRadius: 6,
+    backgroundColor: MCVA.mist,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: MCVA.stone,
   },
   actionSummaryItem: {
     alignItems: "center" as const,
@@ -280,7 +319,9 @@ const styles = StyleSheet.create({
     fontWeight: 700,
   },
   actionSummaryLabel: {
-    fontSize: 7.5,
+    fontSize: 7,
+    fontWeight: 600,
+    letterSpacing: 1.5,
     color: MCVA.gray,
     marginTop: 2,
   },
@@ -288,12 +329,12 @@ const styles = StyleSheet.create({
   rankingRow: {
     flexDirection: "row" as const,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: MCVA.stone,
     paddingVertical: 5,
     paddingHorizontal: 8,
   },
   rankingRowHighlight: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: MCVA.mist,
     borderLeftWidth: 3,
     borderLeftColor: MCVA.red,
   },
@@ -305,9 +346,9 @@ const styles = StyleSheet.create({
     fontWeight: 700,
   },
   rankingHeader: {
-    backgroundColor: MCVA.lightGray,
+    backgroundColor: MCVA.mist,
     borderBottomWidth: 1,
-    borderBottomColor: "#D1D5DB",
+    borderBottomColor: MCVA.stone,
   },
   rankingPosition: {
     fontSize: 16,
@@ -319,7 +360,7 @@ const styles = StyleSheet.create({
     justifyContent: "center" as const,
     padding: 16,
     borderRadius: 8,
-    backgroundColor: MCVA.lightGray,
+    backgroundColor: MCVA.mist,
     width: 120,
   },
 });
@@ -328,7 +369,7 @@ function getScoreColor(score: number): string {
   if (score >= 75) return MCVA.green;
   if (score >= 50) return MCVA.amber;
   if (score >= 25) return MCVA.orange;
-  return MCVA.redScore;
+  return MCVA.redAlert;
 }
 
 function getScoreLabel(score: number): string {
@@ -429,7 +470,10 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
                 +
               </Text>
             </View>
-            <Text style={styles.logoText}>MCVA Consulting</Text>
+            <View>
+              <Text style={styles.logoText}>MCVA</Text>
+              <Text style={styles.logoSub}>AI CONSULTING</Text>
+            </View>
           </View>
           <Text style={styles.headerDate}>{date}</Text>
         </View>
@@ -437,7 +481,8 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
         {/* Accent bar */}
         <View style={styles.accentBar} />
 
-        {/* Title */}
+        {/* Eyebrow + Title */}
+        <Text style={styles.eyebrow}>RAPPORT D&apos;AUDIT</Text>
         <Text style={styles.title}>
           Audit {isExpress ? "Express" : "Complet"} SEO/GEO
         </Text>
@@ -539,7 +584,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
             <View
               style={[
                 styles.itemRow,
-                { backgroundColor: MCVA.lightGray, borderBottomWidth: 1 },
+                { backgroundColor: MCVA.mist, borderBottomWidth: 1 },
               ]}
             >
               <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
@@ -615,7 +660,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
             <View
               style={[
                 styles.itemRow,
-                { backgroundColor: MCVA.lightGray, borderBottomWidth: 1 },
+                { backgroundColor: MCVA.mist, borderBottomWidth: 1 },
               ]}
             >
               <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
@@ -685,7 +730,10 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
               <View style={styles.logoMark}>
                 <Text style={{ color: MCVA.white, fontSize: 14, fontWeight: 700 }}>+</Text>
               </View>
-              <Text style={styles.logoText}>MCVA Consulting</Text>
+              <View>
+              <Text style={styles.logoText}>MCVA</Text>
+              <Text style={styles.logoSub}>AI CONSULTING</Text>
+            </View>
             </View>
             <Text style={styles.headerDate}>{date}</Text>
           </View>
@@ -773,7 +821,10 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
               <View style={styles.logoMark}>
                 <Text style={{ color: MCVA.white, fontSize: 14, fontWeight: 700 }}>+</Text>
               </View>
-              <Text style={styles.logoText}>MCVA Consulting</Text>
+              <View>
+              <Text style={styles.logoText}>MCVA</Text>
+              <Text style={styles.logoSub}>AI CONSULTING</Text>
+            </View>
             </View>
             <Text style={styles.headerDate}>{date}</Text>
           </View>
