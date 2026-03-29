@@ -1,0 +1,96 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { scoreOneDimension, scoreOneCiteDimension } from "@/lib/scoring/scorer";
+import type { QualityLevel } from "@/types/audit";
+
+export const maxDuration = 60;
+
+/**
+ * POST /api/audit-direct/score
+ * Step 2/3/4: Score a batch of dimensions (max 4 at a time)
+ * Saves items to DB incrementally.
+ */
+export async function POST(request: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
+  const body = await request.json();
+  const { auditId, dimensions, framework, quality: rawQuality = "standard" } = body as {
+    auditId: string;
+    dimensions: string[];
+    framework: "core_eeat" | "cite";
+    quality?: string;
+  };
+
+  if (!auditId || !dimensions?.length || !framework) {
+    return NextResponse.json({ error: "auditId, dimensions et framework requis" }, { status: 400 });
+  }
+
+  const quality = (rawQuality || "standard") as QualityLevel;
+  const serviceClient = createServiceClient();
+
+  // Fetch stored HTML
+  const { data: audit, error: fetchErr } = await serviceClient
+    .from("audits")
+    .select("url, scraped_html")
+    .eq("id", auditId)
+    .single();
+
+  if (fetchErr || !audit?.scraped_html) {
+    return NextResponse.json({ error: "Audit introuvable ou HTML manquant", detail: fetchErr?.message }, { status: 404 });
+  }
+
+  const html = audit.scraped_html;
+  const url = audit.url;
+
+  // Score all dimensions in parallel
+  const scoreFn = framework === "core_eeat" ? scoreOneDimension : scoreOneCiteDimension;
+  const results = await Promise.allSettled(
+    dimensions.map((dim) => scoreFn(html, url, dim, "full", quality))
+  );
+
+  // Collect items and track failures
+  const items: any[] = [];
+  const failed: string[] = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    const dim = dimensions[i];
+    if (result.status === "fulfilled" && Array.isArray(result.value)) {
+      items.push(...result.value);
+    } else {
+      failed.push(`${dim}: ${result.status === "rejected" ? result.reason?.message : "empty"}`);
+    }
+  }
+
+  // Save items incrementally (delete existing for these dimensions first, then insert)
+  if (items.length > 0) {
+    // Delete existing items for these dimensions to make this idempotent
+    await serviceClient
+      .from("audit_items")
+      .delete()
+      .eq("audit_id", auditId)
+      .in("dimension", dimensions);
+
+    const { error: insertErr } = await serviceClient
+      .from("audit_items")
+      .insert(items.map((item: any) => ({ audit_id: auditId, ...item })));
+
+    if (insertErr) {
+      return NextResponse.json({
+        error: "Erreur sauvegarde items",
+        detail: insertErr.message,
+        itemCount: items.length,
+        failed,
+      }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json({
+    scored: dimensions,
+    framework,
+    itemCount: items.length,
+    failed: failed.length > 0 ? failed : undefined,
+  });
+}
