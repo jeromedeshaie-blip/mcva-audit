@@ -9,45 +9,17 @@ import {
 } from "@react-pdf/renderer";
 import type { Audit, AuditScores, AuditItem, AuditAction } from "@/types/audit";
 
-// ─── Font Registration (MCVA Brand Identity v2.3) ───
-// GeneralSans: Display/Heading font — self-hosted in /public/fonts/
-// DM Mono: Data/Scores font — from Google Fonts CDN
-
-function getBaseUrl(): string {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return `http://localhost:${process.env.PORT || 3000}`;
-}
-
-const baseUrl = getBaseUrl();
-
-Font.register({
-  family: "GeneralSans",
-  fonts: [
-    { src: `${baseUrl}/fonts/GeneralSans-Light.woff2`, fontWeight: 300 },
-    { src: `${baseUrl}/fonts/GeneralSans-Regular.woff2`, fontWeight: 400 },
-    { src: `${baseUrl}/fonts/GeneralSans-Medium.woff2`, fontWeight: 500 },
-    { src: `${baseUrl}/fonts/GeneralSans-Semibold.woff2`, fontWeight: 600 },
-    { src: `${baseUrl}/fonts/GeneralSans-Bold.woff2`, fontWeight: 700 },
-  ],
-});
-
-Font.register({
-  family: "DMMono",
-  src: "https://fonts.gstatic.com/s/dmmono/v14/aFTU7PB1QTsUX8KYhh2aBYyMcKdI.woff2",
-  fontWeight: 400,
-});
-
-Font.register({
-  family: "DMMono",
-  src: "https://fonts.gstatic.com/s/dmmono/v14/aFTR7PB1QTsUX8KYvrGyIYSnbKX9Rlk.woff2",
-  fontWeight: 500,
-});
+// ─── Font Setup (MCVA Brand Identity v2.3) ───
+// PDF uses Helvetica (built-in) + Courier (built-in mono) as reliable fallbacks.
+// GeneralSans (woff2) is used in the web app but @react-pdf/renderer
+// doesn't reliably support woff2 on Vercel serverless.
+// The MCVA brand identity is applied via colors, spacing, and layout.
 
 // Disable hyphenation for cleaner text
 Font.registerHyphenationCallback((word) => [word]);
 
-const FONT_HEADING = "GeneralSans";
-const FONT_MONO = "DMMono";
+const FONT_HEADING = "Helvetica";
+const FONT_MONO = "Courier";
 
 // ─── MCVA Brand Identity v2.3 ───
 const MCVA = {
