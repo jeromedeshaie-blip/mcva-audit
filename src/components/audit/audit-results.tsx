@@ -15,6 +15,7 @@ interface AuditResultsProps {
   items: AuditItem[];
   actions: AuditAction[];
   auditType: "express" | "full";
+  isSpa?: boolean;
 }
 
 export function AuditResults({
@@ -22,6 +23,7 @@ export function AuditResults({
   items,
   actions,
   auditType,
+  isSpa = false,
 }: AuditResultsProps) {
   const totalItems = AUDIT_ITEM_COUNTS[auditType].total;
   const evaluatedItems = items.length;
@@ -39,6 +41,25 @@ export function AuditResults({
 
   return (
     <div className="space-y-6">
+      {/* SPA Disclaimer */}
+      {isSpa && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="pt-5 pb-4">
+            <div className="flex gap-3">
+              <div className="shrink-0 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-sm">!</div>
+              <div>
+                <h4 className="font-heading font-semibold text-sm text-amber-900">Limitation technique detectee</h4>
+                <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                  Ce site utilise un rendu JavaScript cote client (SPA/Wix). Le contenu visible aux utilisateurs est genere dynamiquement
+                  et n&apos;est pas present dans le HTML statique. Les scores refletent la visibilite reelle du contenu pour les moteurs
+                  de recherche et les modeles d&apos;IA, qui partagent cette meme limitation.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Score Overview */}
       <Card>
         <CardContent className="pt-6">

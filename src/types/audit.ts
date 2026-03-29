@@ -31,6 +31,7 @@ export interface Audit {
   created_by: string;
   created_at: string;
   completed_at: string | null;
+  is_spa: boolean;
 }
 
 // --- Scores ---

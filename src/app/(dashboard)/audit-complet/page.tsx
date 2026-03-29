@@ -123,6 +123,7 @@ function AuditCompletContent() {
   const [scores, setScores] = useState<AuditScores | null>(null);
   const [items, setItems] = useState<AuditItem[]>([]);
   const [actions, setActions] = useState<AuditAction[]>([]);
+  const [isSpa, setIsSpa] = useState(false);
 
   const isRunning = step !== "idle" && step !== "completed" && step !== "error";
 
@@ -142,6 +143,7 @@ function AuditCompletContent() {
       const initData = await fetchStep("/api/audit-direct/init", { url, sector, quality }, "Init");
       const id = initData.auditId;
       setAuditId(id);
+      if (initData.spaDetected) setIsSpa(true);
 
       // ─── Steps 2-7: Score dimensions in 6 batches of 2 ───
       const batches: { step: AuditStep; dimensions: string[]; framework: "core_eeat" | "cite"; label: string }[] = [
@@ -345,6 +347,7 @@ function AuditCompletContent() {
             items={items}
             actions={actions}
             auditType="full"
+            isSpa={isSpa}
           />
         </>
       )}

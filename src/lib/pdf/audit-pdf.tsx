@@ -444,6 +444,29 @@ const styles = StyleSheet.create({
     backgroundColor: MCVA.mist,
     width: 120,
   },
+  // ─── SPA Disclaimer ───
+  spaDisclaimer: {
+    marginBottom: 20,
+    padding: 12,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: MCVA.amber,
+  },
+  spaDisclaimerTitle: {
+    fontFamily: FONT_HEADING,
+    fontSize: 9,
+    fontWeight: 600,
+    color: "#92400E",
+    marginBottom: 4,
+  },
+  spaDisclaimerText: {
+    fontFamily: FONT_HEADING,
+    fontSize: 8,
+    fontWeight: 400,
+    color: "#78350F",
+    lineHeight: 1.5,
+  },
 });
 
 // ─── Helpers ───
@@ -522,6 +545,17 @@ function PdfHeader({ date }: { date: string }) {
       </View>
       <View style={styles.accentBar} />
     </>
+  );
+}
+
+function SpaDisclaimer() {
+  return (
+    <View style={styles.spaDisclaimer}>
+      <Text style={styles.spaDisclaimerTitle}>LIMITATION TECHNIQUE DETECTEE</Text>
+      <Text style={styles.spaDisclaimerText}>
+        Ce site utilise un rendu JavaScript cote client (SPA/Wix). Le contenu visible aux utilisateurs est genere dynamiquement et n&apos;est pas present dans le HTML statique. Les scores ci-dessous refletent la visibilite reelle du contenu pour les moteurs de recherche et les modeles d&apos;IA, qui partagent cette meme limitation. Certains scores peuvent etre sous-estimes si du contenu est uniquement accessible via JavaScript.
+      </Text>
+    </View>
   );
 }
 
@@ -617,6 +651,9 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
             8/8 dimensions analysees — {items.length} criteres sur 30 evalues
           </Text>
         )}
+
+        {/* SPA Disclaimer */}
+        {audit.is_spa && <SpaDisclaimer />}
 
         {/* CORE-EEAT Dimensions */}
         <Text style={styles.sectionTitle}>Scores par dimension CORE-EEAT</Text>

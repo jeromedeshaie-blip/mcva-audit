@@ -207,6 +207,7 @@ export default function AuditDetailPage() {
           items={items}
           actions={actions}
           auditType={audit.audit_type as "express" | "full"}
+          isSpa={audit.is_spa}
         />
       )}
     </div>

@@ -60,10 +60,13 @@ export async function POST(request: NextRequest) {
   // Extract brand name
   const brandName = extractBrandName(html, domain);
 
-  // Store HTML + brand in DB
+  // Detect SPA/client-rendered sites (Wix, React SPA, etc.)
+  const spaDetected = detectSpa(html);
+
+  // Store HTML + brand + SPA flag in DB
   const { error: updateErr } = await serviceClient
     .from("audits")
-    .update({ scraped_html: html, brand_name: brandName })
+    .update({ scraped_html: html, brand_name: brandName, is_spa: spaDetected })
     .eq("id", audit.id);
 
   if (updateErr) {
@@ -76,7 +79,43 @@ export async function POST(request: NextRequest) {
     brandName,
     htmlLength: html.length,
     url: fullUrl,
+    spaDetected,
   });
+}
+
+/**
+ * Detect SPA / client-rendered sites where HTML is mostly empty shells.
+ * Wix, heavy React SPAs, Angular apps etc. render via JS — the static HTML
+ * contains mostly script tags and very little readable content.
+ */
+function detectSpa(html: string): boolean {
+  // Strip all <script> and <style> tags to measure real content
+  const stripped = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const textLength = stripped.length;
+  const htmlLength = html.length;
+
+  // Known SPA platforms
+  const wixMarkers = ["wix-viewer-model", "wixCodeApi", "X-Wix-", "clientSideRender", "wix-thunderbolt"];
+  const hasWixMarker = wixMarkers.some((m) => html.includes(m));
+
+  // If Wix detected, always flag
+  if (hasWixMarker) return true;
+
+  // If text content is less than 5% of total HTML, it's likely a SPA shell
+  if (htmlLength > 10000 && textLength / htmlLength < 0.05) return true;
+
+  // If very few <p> tags and lots of <script> tags
+  const pCount = (html.match(/<p[\s>]/gi) || []).length;
+  const scriptCount = (html.match(/<script[\s>]/gi) || []).length;
+  if (scriptCount > 20 && pCount < 3) return true;
+
+  return false;
 }
 
 function extractBrandName(html: string, domain: string): string {

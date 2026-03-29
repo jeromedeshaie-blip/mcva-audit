@@ -84,17 +84,29 @@ export async function generateActionPlan(
     )
     .join("\n");
 
-  const prompt = `Consultant SEO/GEO MCVA. Genere un plan d'action pour : ${url}
+  const prompt = `Consultant SEO/GEO senior MCVA Consulting. Plan d'action strategique pour : ${url}
 
 Echecs: ${failedItems.length}/${items.length} items. CORE-EEAT: ${coreEeatFails.length}, CITE: ${citeFails.length}.
 SEO: ${seoContext}
 GEO: ${geoContext}
 Top echecs: ${itemsSummary}
 
-Genere 8-12 actions en JSON. Format:
-[{"priority":"P1","title":"max 60 chars","description":"2 phrases max","impact_points":15,"effort":"2-3 jours","category":"technique"}]
+Genere 10-15 actions en JSON strict. Format:
+[{"priority":"P1","title":"max 60 chars","description":"2-3 phrases, probleme + solution concrete + impact attendu","impact_points":15,"effort":"2-3 jours","category":"technique"}]
 
-P1=critique, P2=important, P3=recommande, P4=optimisation. Categories: technique/contenu/GEO/notoriete/SEO. Min 2 actions GEO. Titres professionnels. JSON uniquement.`;
+REGLES CRITIQUES :
+- P1=critique/immediat, P2=important/cette semaine, P3=recommande/ce mois, P4=optimisation/trimestre
+- Categories: technique/contenu/GEO/notoriete/SEO
+- Min 2 actions GEO (visibilite IA)
+- Titres professionnels style cabinet de conseil (jamais "Ameliorer X")
+
+VARIATION OBLIGATOIRE des impacts et efforts — chaque action doit avoir des valeurs DIFFERENTES et REALISTES :
+- impact_points: varier entre 5 et 25 selon l'importance reelle (PAS tous a 20)
+- effort: varier parmi "< 1h", "1-2h", "1 jour", "2-3 jours", "1 semaine", "2-4 semaines"
+- La PREMIERE action P1 DOIT etre un quick win: effort "< 1h" ou "1-2h", concrete et actionnable immediatement (ex: ajout schema.org, correction meta, etc.)
+- Les actions contenu/notoriete prennent plus de temps (1 semaine+), les actions techniques sont souvent rapides
+
+JSON uniquement, sans texte avant ni apres.`;
 
   try {
     const anthropic = new Anthropic();
