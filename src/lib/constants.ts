@@ -218,13 +218,13 @@ export const QUALITY_CONFIG = {
   },
   standard: {
     scoringModel: "claude-sonnet-4-6" as const,
-    htmlMaxChars: 50000,
+    htmlMaxChars: 30000,
     geoModels: ["claude", "openai"] as const,
     maxTokensScoring: 2000,
   },
   premium: {
     scoringModel: "claude-sonnet-4-6" as const,
-    htmlMaxChars: 50000,
+    htmlMaxChars: 30000,
     geoModels: ["claude", "openai", "perplexity", "gemini"] as const,
     maxTokensScoring: 2000,
   },

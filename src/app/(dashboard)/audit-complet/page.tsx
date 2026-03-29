@@ -19,6 +19,9 @@ type AuditStep =
   | "scoring_1"
   | "scoring_2"
   | "scoring_3"
+  | "scoring_4"
+  | "scoring_5"
+  | "scoring_6"
   | "data"
   | "finalize"
   | "completed"
@@ -27,9 +30,12 @@ type AuditStep =
 const STEP_LABELS: Record<AuditStep, string> = {
   idle: "",
   init: "Initialisation et scraping du site...",
-  scoring_1: "Scoring CORE-EEAT dimensions C, O, R, E (1/3)...",
-  scoring_2: "Scoring CORE-EEAT dimensions Exp, Ept, A, T (2/3)...",
-  scoring_3: "Scoring CITE dimensions C, I, T, E (3/3)...",
+  scoring_1: "Scoring CORE-EEAT — C, O (1/6)...",
+  scoring_2: "Scoring CORE-EEAT — R, E (2/6)...",
+  scoring_3: "Scoring CORE-EEAT — Exp, Ept (3/6)...",
+  scoring_4: "Scoring CORE-EEAT — A, T (4/6)...",
+  scoring_5: "Scoring CITE — C, I (5/6)...",
+  scoring_6: "Scoring CITE — T, E (6/6)...",
   data: "Collecte donnees SEO, GEO et audit technique...",
   finalize: "Finalisation et sauvegarde des resultats...",
   completed: "Audit termine !",
@@ -38,15 +44,20 @@ const STEP_LABELS: Record<AuditStep, string> = {
 
 const STEP_PROGRESS: Record<AuditStep, number> = {
   idle: 0,
-  init: 8,
-  scoring_1: 25,
-  scoring_2: 45,
-  scoring_3: 65,
-  data: 80,
+  init: 4,
+  scoring_1: 12,
+  scoring_2: 22,
+  scoring_3: 32,
+  scoring_4: 42,
+  scoring_5: 52,
+  scoring_6: 62,
+  data: 78,
   finalize: 92,
   completed: 100,
   error: 0,
 };
+
+const MAX_RETRIES = 1;
 
 export default function AuditCompletPage() {
   return (
@@ -56,28 +67,43 @@ export default function AuditCompletPage() {
   );
 }
 
-/** Helper to call a step endpoint with error handling */
-async function fetchStep(url: string, body: Record<string, unknown>): Promise<any> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+/** Helper to call a step endpoint with error handling + retry on timeout */
+async function fetchStep(
+  url: string,
+  body: Record<string, unknown>,
+  stepLabel?: string,
+  retries = MAX_RETRIES
+): Promise<any> {
+  const label = stepLabel || url;
 
-  // Handle Vercel timeout / non-JSON errors
-  const contentType = res.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    if (res.status === 504 || res.status === 502) {
-      throw new Error("Timeout serveur. Veuillez reessayer.");
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    // Handle Vercel timeout / non-JSON errors
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      if ((res.status === 504 || res.status === 502) && attempt < retries) {
+        console.warn(`[audit] Timeout on ${label}, retry ${attempt + 1}/${retries}...`);
+        continue; // retry
+      }
+      if (res.status === 504 || res.status === 502) {
+        throw new Error(`Timeout serveur a l'etape "${label}". Veuillez reessayer.`);
+      }
+      throw new Error(`Erreur serveur (${res.status}) a l'etape "${label}".`);
     }
-    throw new Error(`Erreur serveur (${res.status}).`);
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || data.detail || `Erreur ${res.status} a l'etape "${label}"`);
+    }
+    return data;
   }
 
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || data.detail || `Erreur ${res.status}`);
-  }
-  return data;
+  throw new Error(`Echec apres ${retries + 1} tentatives a l'etape "${label}".`);
 }
 
 function AuditCompletContent() {
@@ -113,15 +139,18 @@ function AuditCompletContent() {
       // ─── Step 1: Init (scrape + store HTML) ───
       setStep("init");
       setProgress(STEP_PROGRESS.init);
-      const initData = await fetchStep("/api/audit-direct/init", { url, sector, quality });
+      const initData = await fetchStep("/api/audit-direct/init", { url, sector, quality }, "Init");
       const id = initData.auditId;
       setAuditId(id);
 
-      // ─── Steps 2-4: Score dimensions in 3 batches ───
-      const batches: { step: AuditStep; dimensions: string[]; framework: "core_eeat" | "cite" }[] = [
-        { step: "scoring_1", dimensions: ["C", "O", "R", "E"], framework: "core_eeat" },
-        { step: "scoring_2", dimensions: ["Exp", "Ept", "A", "T"], framework: "core_eeat" },
-        { step: "scoring_3", dimensions: ["C", "I", "T", "E"], framework: "cite" },
+      // ─── Steps 2-7: Score dimensions in 6 batches of 2 ───
+      const batches: { step: AuditStep; dimensions: string[]; framework: "core_eeat" | "cite"; label: string }[] = [
+        { step: "scoring_1", dimensions: ["C", "O"], framework: "core_eeat", label: "CORE-EEAT C,O" },
+        { step: "scoring_2", dimensions: ["R", "E"], framework: "core_eeat", label: "CORE-EEAT R,E" },
+        { step: "scoring_3", dimensions: ["Exp", "Ept"], framework: "core_eeat", label: "CORE-EEAT Exp,Ept" },
+        { step: "scoring_4", dimensions: ["A", "T"], framework: "core_eeat", label: "CORE-EEAT A,T" },
+        { step: "scoring_5", dimensions: ["C", "I"], framework: "cite", label: "CITE C,I" },
+        { step: "scoring_6", dimensions: ["T", "E"], framework: "cite", label: "CITE T,E" },
       ];
 
       for (const batch of batches) {
@@ -132,15 +161,15 @@ function AuditCompletContent() {
           dimensions: batch.dimensions,
           framework: batch.framework,
           quality,
-        });
+        }, batch.label);
       }
 
-      // ─── Step 5: Data collection (SEO + GEO + site audit) ───
+      // ─── Step 6: Data collection (SEO + GEO + site audit) ───
       setStep("data");
       setProgress(STEP_PROGRESS.data);
-      const dataRes = await fetchStep("/api/audit-direct/data", { auditId: id, quality });
+      const dataRes = await fetchStep("/api/audit-direct/data", { auditId: id, quality }, "Data SEO/GEO");
 
-      // ─── Step 6: Finalize (aggregate + save) ───
+      // ─── Step 7: Finalize (aggregate + save) ───
       setStep("finalize");
       setProgress(STEP_PROGRESS.finalize);
       await fetchStep("/api/audit-direct/finalize", {
@@ -149,7 +178,7 @@ function AuditCompletContent() {
         geoData: dataRes.geoData,
         competitors: dataRes.competitors,
         siteAuditData: dataRes.siteAuditData,
-      });
+      }, "Finalize");
 
       // ─── Done — fetch full results ───
       setProgress(100);
@@ -272,7 +301,7 @@ function AuditCompletContent() {
               <div className="flex items-center gap-3">
                 <div className="w-4 h-4 rounded-full border-2 border-[#D4553A] border-t-transparent animate-spin" />
                 <p className="text-xs text-muted-foreground">
-                  Etape {Object.keys(STEP_PROGRESS).indexOf(step)}/6 — chaque etape prend 10-20 secondes
+                  Etape {Object.keys(STEP_PROGRESS).indexOf(step)}/8 — chaque etape prend 10-30 secondes
                 </p>
               </div>
             </div>
