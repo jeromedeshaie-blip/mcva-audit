@@ -77,68 +77,32 @@ export async function generateActionPlan(
     : "Donnees GEO non disponibles";
 
   const itemsSummary = failedItems
-    .slice(0, 30)
+    .slice(0, 15)
     .map(
       (i) =>
-        `[${i.item_code}] ${i.item_label} — score: ${i.score}/100 — ${i.notes || "pas de notes"}`
+        `[${i.item_code}] ${i.item_label} — ${i.score}/100`
     )
     .join("\n");
 
-  const prompt = `Tu es un consultant SEO/GEO senior chez MCVA Consulting, specialise en strategie de visibilite digitale et IA. Tu rediges le plan d'action d'un audit complet pour un client.
+  const prompt = `Consultant SEO/GEO MCVA. Genere un plan d'action pour : ${url}
 
-URL auditee : ${url}
+Echecs: ${failedItems.length}/${items.length} items. CORE-EEAT: ${coreEeatFails.length}, CITE: ${citeFails.length}.
+SEO: ${seoContext}
+GEO: ${geoContext}
+Top echecs: ${itemsSummary}
 
-## SCORES DE L'AUDIT
-- Items reussis : ${passedItems.length}/${items.length}
-- Items en echec ou partiels : ${failedItems.length}/${items.length}
-- CORE-EEAT en echec : ${coreEeatFails.length} items
-- CITE en echec : ${citeFails.length} items
+Genere 8-12 actions en JSON. Format:
+[{"priority":"P1","title":"max 60 chars","description":"2 phrases max","impact_points":15,"effort":"2-3 jours","category":"technique"}]
 
-## DONNEES SEO
-${seoContext}
-
-## DONNEES GEO (Visibilite IA)
-${geoContext}
-
-## CRITERES EN ECHEC (les plus critiques)
-${itemsSummary}
-
----
-
-Genere un plan d'action strategique de 10 a 15 recommandations. Chaque recommandation doit etre :
-
-1. **Strategique** : regroupe plusieurs criteres lies en une action coherente (ne repete PAS chaque critere individuellement)
-2. **Concrete** : donne des instructions precises et actionnables (pas de generalites)
-3. **Priorisee** : commence par les quick wins a fort impact
-
-Pour chaque action, reponds en JSON strict :
-[
-  {
-    "priority": "P1",
-    "title": "Titre concis et professionnel (max 60 chars)",
-    "description": "Description detaillee en 2-4 phrases. Explique le probleme constate, la solution recommandee avec des etapes concretes, et l'impact attendu sur le SEO et/ou la visibilite IA.",
-    "impact_points": 15,
-    "effort": "2-3 jours",
-    "category": "technique"
-  }
-]
-
-Regles :
-- priority : P1 = critique (faire immediatement), P2 = important (cette semaine), P3 = recommande (ce mois), P4 = optimisation (ce trimestre)
-- impact_points : estimation realiste de l'amelioration du score global (1-25 pts)
-- effort : duree realiste ("< 1h", "1-2h", "1 jour", "2-3 jours", "1 semaine", "2-4 semaines")
-- category : "technique", "contenu", "GEO", "notoriete", ou "SEO"
-- Inclus obligatoirement au moins 2 actions specifiques GEO (visibilite dans les moteurs IA)
-- Les titres doivent etre professionnels (style cabinet de conseil), pas "Ameliorer X"
-- Commence par les quick wins P1, termine par les actions P4 long terme
-
-Reponds UNIQUEMENT avec le tableau JSON, sans texte avant ni apres.`;
+P1=critique, P2=important, P3=recommande, P4=optimisation. Categories: technique/contenu/GEO/notoriete/SEO. Min 2 actions GEO. Titres professionnels. JSON uniquement.`;
 
   try {
     const anthropic = new Anthropic();
+    // Use Haiku for action plan — it's strategic synthesis, not precise scoring
+    // Much faster (~5-10s vs 20-40s for Sonnet) to stay within Vercel 60s limit
     const message = await anthropic.messages.create({
-      model: config.scoringModel,
-      max_tokens: 4000,
+      model: "claude-haiku-4-20250404",
+      max_tokens: 2500,
       temperature: 0.2,
       messages: [{ role: "user", content: prompt }],
     });

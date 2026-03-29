@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
-import type { SeoData, GeoData } from "@/types/audit";
+import { generateActionPlan } from "@/lib/scoring/action-plan";
+import type { SeoData, GeoData, QualityLevel } from "@/types/audit";
 
 export const maxDuration = 60;
 
 /**
  * POST /api/audit-direct/finalize
- * Step 6: Aggregate scores + save to audit_scores + cleanup
+ * Step 7: Aggregate scores + generate action plan + save everything + cleanup
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -16,22 +17,24 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
   const body = await request.json();
-  const { auditId, seoData, geoData, competitors, siteAuditData } = body;
+  const { auditId, seoData, geoData, competitors, siteAuditData, quality: rawQuality = "standard" } = body;
   if (!auditId) return NextResponse.json({ error: "auditId requis" }, { status: 400 });
 
+  const quality = (rawQuality || "standard") as QualityLevel;
   const serviceClient = createServiceClient();
 
-  // Fetch all scored items from DB
-  const { data: allItems, error: itemsErr } = await serviceClient
-    .from("audit_items")
-    .select("*")
-    .eq("audit_id", auditId);
+  // Fetch audit URL + all scored items in parallel
+  const [auditRes, itemsRes] = await Promise.all([
+    serviceClient.from("audits").select("url").eq("id", auditId).single(),
+    serviceClient.from("audit_items").select("*").eq("audit_id", auditId),
+  ]);
 
-  if (itemsErr) {
-    return NextResponse.json({ error: "Erreur lecture items", detail: itemsErr.message }, { status: 500 });
+  if (itemsRes.error) {
+    return NextResponse.json({ error: "Erreur lecture items", detail: itemsRes.error.message }, { status: 500 });
   }
 
-  const items = allItems || [];
+  const items = itemsRes.data || [];
+  const auditUrl = auditRes.data?.url || "";
   const coreEeatItems = items.filter((i: any) => i.framework === "core_eeat");
   const citeItems = items.filter((i: any) => i.framework === "cite");
 
@@ -72,28 +75,61 @@ export async function POST(request: NextRequest) {
     site_audit_global: siteAuditData?.globalTechScore ?? null,
   };
 
-  // Delete existing scores for idempotency
-  await serviceClient.from("audit_scores").delete().eq("audit_id", auditId);
+  // Run score save and action plan generation IN PARALLEL
+  // Score save is pure DB (~2s), action plan is Haiku call (~5-10s)
+  const [scoresSaveResult, actionPlanResult] = await Promise.allSettled([
+    // Save scores
+    (async () => {
+      await serviceClient.from("audit_scores").delete().eq("audit_id", auditId);
+      const { error: scoresErr } = await serviceClient.from("audit_scores").insert({
+        audit_id: auditId,
+        score_seo: scoreSeo,
+        score_geo: scoreGeo,
+        score_core_eeat: coreEeatScores,
+        score_cite: citeScores,
+        seo_provider: seoProvider.name,
+        seo_data: enrichedSeoData,
+        geo_provider: process.env.GEO_PROVIDER || "direct_ai",
+        geo_data: geoData || {},
+        competitors: competitors || null,
+      });
+      if (scoresErr) throw scoresErr;
+    })(),
 
-  // Save scores
-  const { error: scoresErr } = await serviceClient.from("audit_scores").insert({
-    audit_id: auditId,
-    score_seo: scoreSeo,
-    score_geo: scoreGeo,
-    score_core_eeat: coreEeatScores,
-    score_cite: citeScores,
-    seo_provider: seoProvider.name,
-    seo_data: enrichedSeoData,
-    geo_provider: process.env.GEO_PROVIDER || "direct_ai",
-    geo_data: geoData || {},
-    competitors: competitors || null,
-  });
+    // Generate strategic action plan via LLM (Haiku = fast)
+    (async () => {
+      if (items.length === 0) return [];
+      try {
+        return await generateActionPlan(
+          items.map((i: any) => ({
+            item_code: i.item_code,
+            item_label: i.item_label,
+            status: i.status,
+            score: i.score,
+            notes: i.notes,
+            dimension: i.dimension,
+            framework: i.framework,
+          })),
+          enrichedSeoData as any,
+          geoData || null,
+          auditUrl,
+          quality
+        );
+      } catch (e: any) {
+        console.error("[finalize] Action plan generation failed:", e.message);
+        return [];
+      }
+    })(),
+  ]);
 
-  if (scoresErr) {
-    return NextResponse.json({ error: "Erreur sauvegarde scores", detail: scoresErr.message }, { status: 500 });
+  if (scoresSaveResult.status === "rejected") {
+    return NextResponse.json({
+      error: "Erreur sauvegarde scores",
+      detail: (scoresSaveResult.reason as any)?.message,
+    }, { status: 500 });
   }
 
-  // Save technical actions
+  // Collect all actions: tech recommendations + LLM strategic actions
   const techActions = (siteAuditData?.techRecommendations || []).map((rec: any) => ({
     audit_id: auditId,
     priority: rec.priority === "critical" ? "P1" : rec.priority === "high" ? "P2" : rec.priority === "medium" ? "P3" : "P4",
@@ -104,9 +140,24 @@ export async function POST(request: NextRequest) {
     category: rec.dimension === "geo" ? "GEO" : rec.dimension === "performance" ? "technique" : rec.dimension === "accessibility" ? "technique" : "SEO",
   }));
 
-  if (techActions.length > 0) {
+  const llmActions = actionPlanResult.status === "fulfilled"
+    ? (actionPlanResult.value as any[]).map((a: any) => ({
+        audit_id: auditId,
+        priority: a.priority,
+        title: a.title,
+        description: a.description,
+        impact_points: a.impact_points,
+        effort: a.effort,
+        category: a.category,
+      }))
+    : [];
+
+  const allActions = [...llmActions, ...techActions];
+
+  // Save all actions
+  if (allActions.length > 0) {
     await serviceClient.from("audit_actions").delete().eq("audit_id", auditId);
-    await serviceClient.from("audit_actions").insert(techActions);
+    await serviceClient.from("audit_actions").insert(allActions);
   }
 
   // Mark completed + cleanup HTML
@@ -125,6 +176,7 @@ export async function POST(request: NextRequest) {
     status: "completed",
     scores: { seo: scoreSeo, geo: scoreGeo },
     itemCount: items.length,
-    actionCount: techActions.length,
+    actionCount: allActions.length,
+    llmActionsGenerated: llmActions.length,
   });
 }

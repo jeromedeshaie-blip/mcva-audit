@@ -24,7 +24,6 @@ type AuditStep =
   | "scoring_6"
   | "data"
   | "finalize"
-  | "actions"
   | "completed"
   | "error";
 
@@ -38,24 +37,22 @@ const STEP_LABELS: Record<AuditStep, string> = {
   scoring_5: "Scoring CITE — C, I (5/6)...",
   scoring_6: "Scoring CITE — T, E (6/6)...",
   data: "Collecte donnees SEO, GEO et audit technique...",
-  finalize: "Finalisation et sauvegarde des scores...",
-  actions: "Generation du plan d'action strategique...",
+  finalize: "Finalisation, plan d'action et sauvegarde...",
   completed: "Audit termine !",
   error: "",
 };
 
 const STEP_PROGRESS: Record<AuditStep, number> = {
   idle: 0,
-  init: 3,
-  scoring_1: 10,
-  scoring_2: 19,
-  scoring_3: 28,
-  scoring_4: 37,
-  scoring_5: 46,
-  scoring_6: 55,
-  data: 68,
-  finalize: 78,
-  actions: 90,
+  init: 4,
+  scoring_1: 12,
+  scoring_2: 22,
+  scoring_3: 32,
+  scoring_4: 42,
+  scoring_5: 52,
+  scoring_6: 62,
+  data: 78,
+  finalize: 90,
   completed: 100,
   error: 0,
 };
@@ -181,15 +178,8 @@ function AuditCompletContent() {
         geoData: dataRes.geoData,
         competitors: dataRes.competitors,
         siteAuditData: dataRes.siteAuditData,
-      }, "Finalize");
-
-      // ─── Step 8: Generate action plan (LLM) ───
-      setStep("actions");
-      setProgress(STEP_PROGRESS.actions);
-      await fetchStep("/api/audit-direct/actions", {
-        auditId: id,
         quality,
-      }, "Plan d'action");
+      }, "Finalize + Plan d'action");
 
       // ─── Done — fetch full results ───
       setProgress(100);
@@ -312,7 +302,7 @@ function AuditCompletContent() {
               <div className="flex items-center gap-3">
                 <div className="w-4 h-4 rounded-full border-2 border-[#D4553A] border-t-transparent animate-spin" />
                 <p className="text-xs text-muted-foreground">
-                  Etape {Object.keys(STEP_PROGRESS).indexOf(step)}/9 — chaque etape prend 10-30 secondes
+                  Etape {Object.keys(STEP_PROGRESS).indexOf(step)}/8 — chaque etape prend 10-30 secondes
                 </p>
               </div>
             </div>
