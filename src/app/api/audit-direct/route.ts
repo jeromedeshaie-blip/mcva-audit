@@ -124,15 +124,67 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Scrape failed", detail: e.message, log }, { status: 500 });
     }
 
-    // --- Step 2: EVERYTHING in parallel (data + scoring) to fit in 60s ---
+    // --- Step 2: EVERYTHING in parallel (data + scoring + site audit) to fit in 60s ---
     log.push(`[${elapsed()}] Starting all tasks in parallel...`);
 
     const brandName = extractBrandName(html, parsedDomain);
     const coreEeatDims = getCoreEeatDimensions("full");
     const citeDims = getCiteDimensions("full");
 
-    // Run data collection AND all scoring in one massive Promise.allSettled
-    // This is safe: the earlier "credits exhausted" error was the real issue, not rate limits
+    // Site audit as an async task (runs in parallel with scoring)
+    const siteAuditTask = (async () => {
+      const [crawlData, robots] = await Promise.allSettled([
+        crawlUrl(fullUrl),
+        checkRobotsTxt(fullUrl),
+      ]);
+      const crawl = crawlData.status === "fulfilled" ? crawlData.value : null;
+      const robotsResult = robots.status === "fulfilled"
+        ? robots.value
+        : { exists: false, hasSitemap: false, sitemapUrl: null, blocksAll: false };
+
+      let seoChecks = { checks: [] as any[], score: 0, schemaData: null as any };
+      if (crawl) seoChecks = runSeoChecks(crawl, robotsResult);
+
+      // Skip PageSpeed to save ~10s — use 0 as fallback
+      const perf = { score: 0, mobile: null as any, desktop: null as any };
+
+      const bodyText = crawl?.bodyText?.substring(0, 10000) || "";
+      const readabilityData = analyzeReadability(bodyText);
+      const violations: AccessibilityViolation[] = [];
+      const noAltImages = (crawl?.images || []).filter((img: any) => !img.alt || img.alt.trim() === "");
+      if (noAltImages.length > 0) {
+        violations.push({
+          id: "image-alt", impact: "serious",
+          description: `${noAltImages.length} image(s) sans attribut alt`,
+          nodes_count: noAltImages.length, wcag_criteria: "WCAG 2.1 AA 1.1.1",
+        });
+      }
+      const scores = {
+        seo: seoChecks.score,
+        performance: perf.score || 0,
+        accessibility: accessibilityViolationsToScore(violations),
+        readability: readabilityToScore(readabilityData.flesch_score, readabilityData.word_count),
+      };
+      return {
+        scores,
+        globalTechScore: computeGlobalScore(scores),
+        techRecommendations: generateRecommendations(seoChecks.checks as any, perf.mobile as any, violations as any, scores),
+        seoChecks, readabilityData,
+        crawlMeta: {
+          url: crawl?.url || fullUrl,
+          hasViewport: crawl?.hasViewport ?? false,
+          canonicalUrl: crawl?.canonicalUrl ?? null,
+          title: crawl?.title ?? null,
+          metaDescription: crawl?.metaDescription ?? null,
+          hreflang: (crawl?.hreflang || []).slice(0, 10),
+        },
+        robots: robotsResult,
+        performanceData: perf,
+      };
+    })();
+
+    // Run ALL tasks in one massive Promise.allSettled:
+    // data collection + ALL scoring + site audit — all at once
     const allResults = await Promise.allSettled([
       // [0] SEO data
       (async () => {
@@ -149,11 +201,13 @@ export async function POST(request: NextRequest) {
         const provider = await createSeoProvider();
         return provider.getCompetitors(parsedDomain);
       })(),
-      // [3..3+N-1] CORE-EEAT dimensions (all in parallel)
+      // [3] Site audit (crawl + readability, no PageSpeed)
+      siteAuditTask,
+      // [4..4+N-1] CORE-EEAT dimensions (all in parallel)
       ...coreEeatDims.map((dim) =>
         scoreOneDimension(html, url, dim, "full", quality)
       ),
-      // [3+N..end] CITE dimensions (all in parallel)
+      // [4+N..end] CITE dimensions (all in parallel)
       ...citeDims.map((dim) =>
         scoreOneCiteDimension(html, url, dim, "full", quality)
       ),
@@ -163,14 +217,18 @@ export async function POST(request: NextRequest) {
     const seoResult = allResults[0];
     const geoResult = allResults[1];
     const competitorsResult = allResults[2];
-    const scoringResults = allResults.slice(3);
+    const siteAuditResult = allResults[3];
+    const scoringResults = allResults.slice(4);
 
     const seoData = seoResult.status === "fulfilled" ? seoResult.value : getEmptySeoData();
     const geoData = geoResult.status === "fulfilled" ? geoResult.value : getEmptyGeoData();
     const competitors = competitorsResult.status === "fulfilled" ? competitorsResult.value : null;
+    const siteAuditData = siteAuditResult.status === "fulfilled" ? siteAuditResult.value : null;
 
     if (seoResult.status === "rejected") log.push(`[${elapsed()}] SEO data failed: ${seoResult.reason?.message}`);
     if (geoResult.status === "rejected") log.push(`[${elapsed()}] GEO data failed: ${geoResult.reason?.message}`);
+    if (siteAuditResult.status === "rejected") log.push(`[${elapsed()}] Site audit failed: ${siteAuditResult.reason?.message}`);
+    log.push(`[${elapsed()}] Site audit: ${siteAuditResult.status === "fulfilled" ? `global=${siteAuditData?.globalTechScore}` : "failed"}`);
 
     // Collect scored items with detailed error logging
     const allScoredItems: Omit<AuditItem, "id" | "audit_id">[] = [];
@@ -200,72 +258,6 @@ export async function POST(request: NextRequest) {
     const scoreGeo = (geoData as any).ai_visibility_score ?? 0;
 
     log.push(`[${elapsed()}] Scores: SEO=${scoreSeo}, GEO=${scoreGeo}`);
-
-    // --- Step 3: Site audit (quick, no LLM) ---
-    let siteAuditData: any = null;
-    try {
-      const [crawlData, robots] = await Promise.allSettled([
-        crawlUrl(fullUrl),
-        checkRobotsTxt(fullUrl),
-      ]);
-
-      const crawl = crawlData.status === "fulfilled" ? crawlData.value : null;
-      const robotsResult = robots.status === "fulfilled"
-        ? robots.value
-        : { exists: false, hasSitemap: false, sitemapUrl: null, blocksAll: false };
-
-      let seoChecks = { checks: [] as any[], score: 0, schemaData: null as any };
-      if (crawl) seoChecks = runSeoChecks(crawl, robotsResult);
-
-      let perf = { score: 0, mobile: null as any, desktop: null as any };
-      try {
-        perf = await getPageSpeedScore(fullUrl) as any;
-      } catch (e: any) {
-        log.push(`[${elapsed()}] PageSpeed failed: ${e.message}`);
-      }
-
-      const bodyText = crawl?.bodyText?.substring(0, 10000) || "";
-      const readabilityData = analyzeReadability(bodyText);
-      const violations: AccessibilityViolation[] = [];
-      const noAltImages = (crawl?.images || []).filter((img: any) => !img.alt || img.alt.trim() === "");
-      if (noAltImages.length > 0) {
-        violations.push({
-          id: "image-alt",
-          impact: "serious",
-          description: `${noAltImages.length} image(s) sans attribut alt`,
-          nodes_count: noAltImages.length,
-          wcag_criteria: "WCAG 2.1 AA 1.1.1",
-        });
-      }
-
-      const scores = {
-        seo: seoChecks.score,
-        performance: perf.score || 0,
-        accessibility: accessibilityViolationsToScore(violations),
-        readability: readabilityToScore(readabilityData.flesch_score, readabilityData.word_count),
-      };
-
-      siteAuditData = {
-        scores,
-        globalTechScore: computeGlobalScore(scores),
-        techRecommendations: generateRecommendations(seoChecks.checks as any, perf.mobile as any, violations as any, scores),
-        seoChecks,
-        readabilityData,
-        crawlMeta: {
-          url: crawl?.url || fullUrl,
-          hasViewport: crawl?.hasViewport ?? false,
-          canonicalUrl: crawl?.canonicalUrl ?? null,
-          title: crawl?.title ?? null,
-          metaDescription: crawl?.metaDescription ?? null,
-          hreflang: (crawl?.hreflang || []).slice(0, 10),
-        },
-        robots: robotsResult,
-        performanceData: perf,
-      };
-      log.push(`[${elapsed()}] Site audit done: global=${siteAuditData.globalTechScore}`);
-    } catch (e: any) {
-      log.push(`[${elapsed()}] Site audit failed: ${e.message}`);
-    }
 
     // --- Step 4: Save everything ---
     log.push(`[${elapsed()}] Saving results...`);
