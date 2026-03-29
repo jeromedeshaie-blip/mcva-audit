@@ -5,23 +5,61 @@ import {
   Text,
   View,
   StyleSheet,
+  Font,
 } from "@react-pdf/renderer";
 import type { Audit, AuditScores, AuditItem, AuditAction } from "@/types/audit";
 
-// Use Helvetica (built-in) to avoid font download timeouts on serverless
-const FONT_FAMILY = "Helvetica";
+// ─── Font Registration (MCVA Brand Identity v2.3) ───
+// GeneralSans: Display/Heading font — self-hosted in /public/fonts/
+// DM Mono: Data/Scores font — from Google Fonts CDN
 
-// MCVA Brand Identity v2.3
+function getBaseUrl(): string {
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return `http://localhost:${process.env.PORT || 3000}`;
+}
+
+const baseUrl = getBaseUrl();
+
+Font.register({
+  family: "GeneralSans",
+  fonts: [
+    { src: `${baseUrl}/fonts/GeneralSans-Light.woff2`, fontWeight: 300 },
+    { src: `${baseUrl}/fonts/GeneralSans-Regular.woff2`, fontWeight: 400 },
+    { src: `${baseUrl}/fonts/GeneralSans-Medium.woff2`, fontWeight: 500 },
+    { src: `${baseUrl}/fonts/GeneralSans-Semibold.woff2`, fontWeight: 600 },
+    { src: `${baseUrl}/fonts/GeneralSans-Bold.woff2`, fontWeight: 700 },
+  ],
+});
+
+Font.register({
+  family: "DMMono",
+  src: "https://fonts.gstatic.com/s/dmmono/v14/aFTU7PB1QTsUX8KYhh2aBYyMcKdI.woff2",
+  fontWeight: 400,
+});
+
+Font.register({
+  family: "DMMono",
+  src: "https://fonts.gstatic.com/s/dmmono/v14/aFTR7PB1QTsUX8KYvrGyIYSnbKX9Rlk.woff2",
+  fontWeight: 500,
+});
+
+// Disable hyphenation for cleaner text
+Font.registerHyphenationCallback((word) => [word]);
+
+const FONT_HEADING = "GeneralSans";
+const FONT_MONO = "DMMono";
+
+// ─── MCVA Brand Identity v2.3 ───
 const MCVA = {
   // Identity
-  red: "#8B2C2C",       // Swiss Red — signature
-  coral: "#D4553A",     // CTA, accents
-  ink: "#0E0E0E",       // Texte principal
-  abyss: "#0A0808",     // Fond sombre
-  paper: "#F8F6F1",     // Fond principal
-  mist: "#F2F0EB",      // Fonds alternes
-  stone: "#E8E4DD",     // Bordures, separateurs
-  white: "#FFFFFF",     // Fond cards
+  red: "#8B2C2C",
+  coral: "#D4553A",
+  ink: "#0E0E0E",
+  abyss: "#0A0808",
+  paper: "#F8F6F1",
+  mist: "#F2F0EB",
+  stone: "#E8E4DD",
+  white: "#FFFFFF",
   // Spectre
   gradAbyss: "#4A1515",
   blush: "#E8937A",
@@ -33,20 +71,20 @@ const MCVA = {
   redAlert: "#EF4444",
   // Neutres
   gray: "#6B7280",
-  grayLight: "#F3F4F6",
 };
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: FONT_FAMILY,
+    fontFamily: FONT_HEADING,
     fontSize: 10,
+    fontWeight: 400,
     color: MCVA.ink,
     backgroundColor: MCVA.white,
     paddingTop: 60,
     paddingBottom: 60,
     paddingHorizontal: 50,
   },
-  // Header
+  // ─── Header ───
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -59,58 +97,70 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logoMark: {
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
     backgroundColor: MCVA.red,
     borderRadius: 4,
     justifyContent: "center",
     alignItems: "center",
   },
   logoText: {
-    fontSize: 14,
+    fontFamily: FONT_HEADING,
+    fontSize: 15,
     fontWeight: 700,
-    letterSpacing: 0.8,
+    letterSpacing: 1.8,
     color: MCVA.ink,
   },
+  logoBar: {
+    height: 2,
+    backgroundColor: MCVA.coral,
+    marginVertical: 2,
+  },
   logoSub: {
-    fontSize: 7,
+    fontFamily: FONT_HEADING,
+    fontSize: 6.5,
     fontWeight: 500,
-    letterSpacing: 2,
+    letterSpacing: 2.5,
     color: MCVA.gray,
   },
   headerDate: {
+    fontFamily: FONT_HEADING,
     fontSize: 9,
+    fontWeight: 400,
     color: MCVA.gray,
   },
-  // Accent bar — Swiss Red to Coral gradient approximation
+  // ─── Accent bar ───
   accentBar: {
     height: 4,
     backgroundColor: MCVA.red,
     marginBottom: 24,
   },
-  // Title
-  title: {
-    fontSize: 22,
-    fontWeight: 700,
-    color: MCVA.ink,
-    marginBottom: 4,
-    letterSpacing: -0.4,
-  },
-  subtitle: {
-    fontSize: 12,
-    fontWeight: 400,
-    color: MCVA.gray,
-    marginBottom: 24,
-  },
-  // Eyebrow (section label)
+  // ─── Eyebrow ───
   eyebrow: {
-    fontSize: 8,
+    fontFamily: FONT_HEADING,
+    fontSize: 9,
     fontWeight: 600,
     letterSpacing: 2.4,
     color: MCVA.red,
     marginBottom: 6,
   },
-  // Scores section
+  // ─── Title ───
+  title: {
+    fontFamily: FONT_HEADING,
+    fontSize: 22,
+    fontWeight: 700,
+    color: MCVA.ink,
+    marginBottom: 4,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontFamily: FONT_HEADING,
+    fontSize: 12,
+    fontWeight: 400,
+    color: MCVA.gray,
+    marginBottom: 24,
+  },
+  // ─── Scores ───
   scoresRow: {
     flexDirection: "row",
     justifyContent: "center",
@@ -127,22 +177,27 @@ const styles = StyleSheet.create({
     width: 140,
   },
   scoreValue: {
+    fontFamily: FONT_MONO,
     fontSize: 36,
-    fontWeight: 700,
+    fontWeight: 500,
   },
   scoreLabel: {
+    fontFamily: FONT_HEADING,
     fontSize: 9,
     fontWeight: 600,
     marginTop: 4,
-    letterSpacing: 0.5,
+    letterSpacing: 1,
     color: MCVA.ink,
   },
   scoreQuality: {
+    fontFamily: FONT_HEADING,
     fontSize: 9,
+    fontWeight: 500,
     marginTop: 2,
   },
-  // Section
+  // ─── Section ───
   sectionTitle: {
+    fontFamily: FONT_HEADING,
     fontSize: 14,
     fontWeight: 700,
     color: MCVA.ink,
@@ -150,7 +205,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     letterSpacing: -0.2,
   },
-  // Dimension bars
+  // ─── Dimension bars ───
   dimensionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -159,9 +214,11 @@ const styles = StyleSheet.create({
   dimensionLabel: {
     width: 140,
     fontSize: 9,
+    fontWeight: 400,
   },
   dimensionCode: {
-    fontWeight: 700,
+    fontFamily: FONT_MONO,
+    fontWeight: 500,
     marginRight: 6,
     color: MCVA.red,
   },
@@ -177,12 +234,13 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   dimensionScore: {
+    fontFamily: FONT_MONO,
     width: 30,
     fontSize: 9,
-    fontWeight: 700,
+    fontWeight: 500,
     textAlign: "right",
   },
-  // Items
+  // ─── Items ───
   itemRow: {
     flexDirection: "row",
     paddingVertical: 4,
@@ -191,28 +249,33 @@ const styles = StyleSheet.create({
     borderBottomColor: MCVA.stone,
   },
   itemCode: {
-    width: 40,
+    fontFamily: FONT_MONO,
+    width: 42,
     fontSize: 8,
     color: MCVA.gray,
-    fontWeight: 600,
+    fontWeight: 500,
   },
   itemLabel: {
+    fontFamily: FONT_HEADING,
     flex: 1,
     fontSize: 8,
+    fontWeight: 400,
   },
   itemStatus: {
+    fontFamily: FONT_MONO,
     width: 30,
     fontSize: 8,
-    fontWeight: 700,
+    fontWeight: 500,
     textAlign: "center",
   },
   itemScore: {
+    fontFamily: FONT_MONO,
     width: 25,
     fontSize: 8,
-    fontWeight: 700,
+    fontWeight: 500,
     textAlign: "right",
   },
-  // Footer
+  // ─── Footer ───
   footer: {
     position: "absolute",
     bottom: 30,
@@ -221,9 +284,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     fontSize: 8,
+    fontWeight: 400,
     color: MCVA.gray,
   },
-  // Express CTA
+  // ─── Express CTA ───
   ctaBox: {
     marginTop: 24,
     padding: 16,
@@ -233,17 +297,20 @@ const styles = StyleSheet.create({
     borderLeftColor: MCVA.coral,
   },
   ctaTitle: {
+    fontFamily: FONT_HEADING,
     fontSize: 11,
     fontWeight: 700,
     color: MCVA.red,
     marginBottom: 4,
   },
   ctaText: {
+    fontFamily: FONT_HEADING,
     fontSize: 9,
+    fontWeight: 400,
     color: MCVA.gray,
     lineHeight: 1.5,
   },
-  // Action Plan
+  // ─── Action Plan ───
   actionCard: {
     marginBottom: 10,
     padding: 12,
@@ -259,21 +326,25 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionPriorityBadge: {
+    fontFamily: FONT_MONO,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 3,
     fontSize: 7,
-    fontWeight: 700,
+    fontWeight: 500,
     color: MCVA.white,
   },
   actionTitle: {
+    fontFamily: FONT_HEADING,
     fontSize: 10,
-    fontWeight: 700,
+    fontWeight: 600,
     color: MCVA.ink,
     flex: 1,
   },
   actionDescription: {
+    fontFamily: FONT_HEADING,
     fontSize: 8.5,
+    fontWeight: 400,
     color: "#374151",
     lineHeight: 1.4,
     marginBottom: 6,
@@ -284,23 +355,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actionMetaItem: {
+    fontFamily: FONT_HEADING,
     fontSize: 7.5,
+    fontWeight: 400,
     color: MCVA.gray,
   },
   actionMetaValue: {
-    fontWeight: 700,
+    fontFamily: FONT_MONO,
+    fontWeight: 500,
     color: MCVA.ink,
   },
   actionCategoryBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 10,
+    fontFamily: FONT_MONO,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 9999,
     fontSize: 7,
+    fontWeight: 500,
     backgroundColor: MCVA.mist,
     color: MCVA.red,
-    fontWeight: 600,
   },
-  // Summary box for action plan header
+  // ─── Action Summary ───
   actionSummaryBox: {
     flexDirection: "row" as const,
     justifyContent: "space-between" as const,
@@ -315,17 +390,19 @@ const styles = StyleSheet.create({
     alignItems: "center" as const,
   },
   actionSummaryNumber: {
+    fontFamily: FONT_MONO,
     fontSize: 18,
-    fontWeight: 700,
+    fontWeight: 500,
   },
   actionSummaryLabel: {
+    fontFamily: FONT_HEADING,
     fontSize: 7,
     fontWeight: 600,
     letterSpacing: 1.5,
     color: MCVA.gray,
     marginTop: 2,
   },
-  // Ranking table
+  // ─── Ranking ───
   rankingRow: {
     flexDirection: "row" as const,
     borderBottomWidth: 0.5,
@@ -339,11 +416,14 @@ const styles = StyleSheet.create({
     borderLeftColor: MCVA.red,
   },
   rankingCell: {
+    fontFamily: FONT_HEADING,
     fontSize: 8.5,
+    fontWeight: 400,
   },
   rankingCellBold: {
+    fontFamily: FONT_HEADING,
     fontSize: 8.5,
-    fontWeight: 700,
+    fontWeight: 600,
   },
   rankingHeader: {
     backgroundColor: MCVA.mist,
@@ -351,8 +431,9 @@ const styles = StyleSheet.create({
     borderBottomColor: MCVA.stone,
   },
   rankingPosition: {
+    fontFamily: FONT_MONO,
     fontSize: 16,
-    fontWeight: 700,
+    fontWeight: 500,
     textAlign: "center" as const,
   },
   rankingPositionBox: {
@@ -364,6 +445,8 @@ const styles = StyleSheet.create({
     width: 120,
   },
 });
+
+// ─── Helpers ───
 
 function getScoreColor(score: number): string {
   if (score >= 75) return MCVA.green;
@@ -398,10 +481,10 @@ const CITE_LABELS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  P1: "#DC2626", // red
-  P2: "#EA580C", // orange
-  P3: "#D97706", // amber
-  P4: "#6B7280", // gray
+  P1: "#DC2626",
+  P2: "#EA580C",
+  P3: "#D97706",
+  P4: "#6B7280",
 };
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -418,6 +501,42 @@ const CATEGORY_LABELS: Record<string, string> = {
   notoriete: "Notoriete",
   SEO: "SEO",
 };
+
+// ─── Reusable Components ───
+
+function PdfHeader({ date }: { date: string }) {
+  return (
+    <>
+      <View style={styles.header}>
+        <View style={styles.logo}>
+          <View style={styles.logoMark}>
+            <Text style={{ color: MCVA.paper, fontSize: 16, fontWeight: 700 }}>+</Text>
+          </View>
+          <View>
+            <Text style={styles.logoText}>MCVA</Text>
+            <View style={styles.logoBar} />
+            <Text style={styles.logoSub}>AI CONSULTING</Text>
+          </View>
+        </View>
+        <Text style={styles.headerDate}>{date}</Text>
+      </View>
+      <View style={styles.accentBar} />
+    </>
+  );
+}
+
+function PdfFooter() {
+  return (
+    <View style={styles.footer} fixed>
+      <Text>MCVA Consulting SA — Confidentiel</Text>
+      <Text
+        render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`}
+      />
+    </View>
+  );
+}
+
+// ─── Types ───
 
 interface BenchmarkRankingData {
   benchmarkName: string;
@@ -441,6 +560,8 @@ interface AuditPdfProps {
   benchmarkRanking?: BenchmarkRankingData;
 }
 
+// ─── Main Document ───
+
 export function AuditPdfDocument({ audit, scores, items, actions = [], benchmarkRanking }: AuditPdfProps) {
   const date = new Date(audit.created_at).toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -455,36 +576,14 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
 
   return (
     <Document>
+      {/* ═══ PAGE 1 — Scores & Dimensions ═══ */}
       <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.logo}>
-            <View style={styles.logoMark}>
-              <Text
-                style={{
-                  color: MCVA.white,
-                  fontSize: 14,
-                  fontWeight: 700,
-                }}
-              >
-                +
-              </Text>
-            </View>
-            <View>
-              <Text style={styles.logoText}>MCVA</Text>
-              <Text style={styles.logoSub}>AI CONSULTING</Text>
-            </View>
-          </View>
-          <Text style={styles.headerDate}>{date}</Text>
-        </View>
-
-        {/* Accent bar */}
-        <View style={styles.accentBar} />
+        <PdfHeader date={date} />
 
         {/* Eyebrow + Title */}
         <Text style={styles.eyebrow}>RAPPORT D&apos;AUDIT</Text>
         <Text style={styles.title}>
-          Audit {isExpress ? "Express" : "Complet"} SEO/GEO
+          Audit {isExpress ? "Express" : "Complet"} SEO / GEO
         </Text>
         <Text style={styles.subtitle}>
           {audit.domain}
@@ -494,64 +593,35 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
         {/* Scores */}
         <View style={styles.scoresRow}>
           <View style={styles.scoreBox}>
-            <Text
-              style={[
-                styles.scoreValue,
-                { color: getScoreColor(scores.score_seo) },
-              ]}
-            >
+            <Text style={[styles.scoreValue, { color: getScoreColor(scores.score_seo) }]}>
               {scores.score_seo}
             </Text>
-            <Text style={styles.scoreLabel}>Score SEO</Text>
-            <Text
-              style={[
-                styles.scoreQuality,
-                { color: getScoreColor(scores.score_seo) },
-              ]}
-            >
+            <Text style={styles.scoreLabel}>SCORE SEO</Text>
+            <Text style={[styles.scoreQuality, { color: getScoreColor(scores.score_seo) }]}>
               {getScoreLabel(scores.score_seo)}
             </Text>
           </View>
           <View style={styles.scoreBox}>
-            <Text
-              style={[
-                styles.scoreValue,
-                { color: getScoreColor(scores.score_geo) },
-              ]}
-            >
+            <Text style={[styles.scoreValue, { color: getScoreColor(scores.score_geo) }]}>
               {scores.score_geo}
             </Text>
-            <Text style={styles.scoreLabel}>Score GEO</Text>
-            <Text
-              style={[
-                styles.scoreQuality,
-                { color: getScoreColor(scores.score_geo) },
-              ]}
-            >
+            <Text style={styles.scoreLabel}>SCORE GEO</Text>
+            <Text style={[styles.scoreQuality, { color: getScoreColor(scores.score_geo) }]}>
               {getScoreLabel(scores.score_geo)}
             </Text>
           </View>
         </View>
 
         {isExpress && (
-          <Text
-            style={{
-              fontSize: 9,
-              color: MCVA.gray,
-              textAlign: "center",
-              marginBottom: 20,
-            }}
-          >
-            8/8 dimensions analysées — {items.length} critères sur 30
-            évalués
+          <Text style={{ fontSize: 9, color: MCVA.gray, textAlign: "center", marginBottom: 20 }}>
+            8/8 dimensions analysees — {items.length} criteres sur 30 evalues
           </Text>
         )}
 
         {/* CORE-EEAT Dimensions */}
         <Text style={styles.sectionTitle}>Scores par dimension CORE-EEAT</Text>
         {["C", "O", "R", "E", "Exp", "Ept", "A", "T"].map((dim) => {
-          const score =
-            scores.score_core_eeat[dim] ?? 0;
+          const score = scores.score_core_eeat[dim] ?? 0;
           return (
             <View key={dim} style={styles.dimensionRow}>
               <View style={styles.dimensionLabel}>
@@ -565,10 +635,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
                 <View
                   style={[
                     styles.dimensionBarFill,
-                    {
-                      width: `${score}%`,
-                      backgroundColor: getScoreColor(score),
-                    },
+                    { width: `${score}%`, backgroundColor: getScoreColor(score) },
                   ]}
                 />
               </View>
@@ -576,49 +643,6 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
             </View>
           );
         })}
-
-        {/* Items detail */}
-        {coreEeatItems.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Detail des criteres CORE-EEAT</Text>
-            <View
-              style={[
-                styles.itemRow,
-                { backgroundColor: MCVA.mist, borderBottomWidth: 1 },
-              ]}
-            >
-              <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
-              <Text style={[styles.itemLabel, { fontWeight: 700 }]}>
-                Critere
-              </Text>
-              <Text style={[styles.itemStatus, { fontWeight: 700 }]}>
-                Statut
-              </Text>
-              <Text style={[styles.itemScore, { fontWeight: 700 }]}>
-                Score
-              </Text>
-            </View>
-            {coreEeatItems.map((item) => (
-              <View key={item.item_code} style={styles.itemRow}>
-                <Text style={styles.itemCode}>{item.item_code}</Text>
-                <Text style={styles.itemLabel}>{item.item_label}</Text>
-                <Text
-                  style={[
-                    styles.itemStatus,
-                    { color: getScoreColor(item.score) },
-                  ]}
-                >
-                  {item.status === "pass"
-                    ? "OK"
-                    : item.status === "partial"
-                      ? "~"
-                      : "KO"}
-                </Text>
-                <Text style={styles.itemScore}>{item.score}</Text>
-              </View>
-            ))}
-          </>
-        )}
 
         {/* CITE Dimensions */}
         {hasCiteScores && (
@@ -639,10 +663,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
                     <View
                       style={[
                         styles.dimensionBarFill,
-                        {
-                          width: `${score}%`,
-                          backgroundColor: getScoreColor(score),
-                        },
+                        { width: `${score}%`, backgroundColor: getScoreColor(score) },
                       ]}
                     />
                   </View>
@@ -653,95 +674,79 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
           </>
         )}
 
-        {/* CITE Items detail */}
-        {citeItems.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Detail des criteres CITE</Text>
-            <View
-              style={[
-                styles.itemRow,
-                { backgroundColor: MCVA.mist, borderBottomWidth: 1 },
-              ]}
-            >
-              <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
-              <Text style={[styles.itemLabel, { fontWeight: 700 }]}>
-                Critere
-              </Text>
-              <Text style={[styles.itemStatus, { fontWeight: 700 }]}>
-                Statut
-              </Text>
-              <Text style={[styles.itemScore, { fontWeight: 700 }]}>
-                Score
-              </Text>
-            </View>
-            {citeItems.map((item) => (
-              <View key={item.item_code} style={styles.itemRow}>
-                <Text style={styles.itemCode}>{item.item_code}</Text>
-                <Text style={styles.itemLabel}>{item.item_label}</Text>
-                <Text
-                  style={[
-                    styles.itemStatus,
-                    { color: getScoreColor(item.score) },
-                  ]}
-                >
-                  {item.status === "pass"
-                    ? "OK"
-                    : item.status === "partial"
-                      ? "~"
-                      : "KO"}
-                </Text>
-                <Text style={styles.itemScore}>{item.score}</Text>
-              </View>
-            ))}
-          </>
-        )}
-
         {/* Express CTA */}
         {isExpress && (
           <View style={styles.ctaBox}>
-            <Text style={styles.ctaTitle}>
-              Passez à l'audit complet
-            </Text>
+            <Text style={styles.ctaTitle}>Passez a l&apos;audit complet</Text>
             <Text style={styles.ctaText}>
-              80 critères CORE-EEAT + 40 critères CITE + plan d'action
-              priorisé + benchmark concurrentiel. Contactez votre consultant
-              Arneo.
+              80 criteres CORE-EEAT + 40 criteres CITE + plan d&apos;action priorise + benchmark concurrentiel. Contactez votre consultant MCVA.
             </Text>
           </View>
         )}
 
-        {/* Footer */}
-        <View style={styles.footer} fixed>
-          <Text>MCVA Consulting SA — Confidentiel</Text>
-          <Text
-            render={({ pageNumber, totalPages }) =>
-              `${pageNumber} / ${totalPages}`
-            }
-          />
-        </View>
+        <PdfFooter />
       </Page>
 
-      {/* Action Plan — Page 2+ (full audit only) */}
+      {/* ═══ PAGE 2 — CORE-EEAT Items Detail ═══ */}
+      {coreEeatItems.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          <PdfHeader date={date} />
+          <Text style={styles.eyebrow}>DETAIL DES CRITERES</Text>
+          <Text style={styles.sectionTitle}>Criteres CORE-EEAT ({coreEeatItems.length} evalues)</Text>
+          <View style={[styles.itemRow, { backgroundColor: MCVA.mist, borderBottomWidth: 1 }]}>
+            <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
+            <Text style={[styles.itemLabel, { fontWeight: 700 }]}>Critere</Text>
+            <Text style={[styles.itemStatus, { fontWeight: 700 }]}>Statut</Text>
+            <Text style={[styles.itemScore, { fontWeight: 700 }]}>Score</Text>
+          </View>
+          {coreEeatItems.map((item) => (
+            <View key={item.item_code} style={styles.itemRow} wrap={false}>
+              <Text style={styles.itemCode}>{item.item_code}</Text>
+              <Text style={styles.itemLabel}>{item.item_label}</Text>
+              <Text style={[styles.itemStatus, { color: getScoreColor(item.score) }]}>
+                {item.status === "pass" ? "OK" : item.status === "partial" ? "~" : "KO"}
+              </Text>
+              <Text style={styles.itemScore}>{item.score}</Text>
+            </View>
+          ))}
+          <PdfFooter />
+        </Page>
+      )}
+
+      {/* ═══ PAGE 3 — CITE Items Detail ═══ */}
+      {citeItems.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          <PdfHeader date={date} />
+          <Text style={styles.eyebrow}>DETAIL DES CRITERES</Text>
+          <Text style={styles.sectionTitle}>Criteres CITE ({citeItems.length} evalues)</Text>
+          <View style={[styles.itemRow, { backgroundColor: MCVA.mist, borderBottomWidth: 1 }]}>
+            <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
+            <Text style={[styles.itemLabel, { fontWeight: 700 }]}>Critere</Text>
+            <Text style={[styles.itemStatus, { fontWeight: 700 }]}>Statut</Text>
+            <Text style={[styles.itemScore, { fontWeight: 700 }]}>Score</Text>
+          </View>
+          {citeItems.map((item) => (
+            <View key={item.item_code} style={styles.itemRow} wrap={false}>
+              <Text style={styles.itemCode}>{item.item_code}</Text>
+              <Text style={styles.itemLabel}>{item.item_label}</Text>
+              <Text style={[styles.itemStatus, { color: getScoreColor(item.score) }]}>
+                {item.status === "pass" ? "OK" : item.status === "partial" ? "~" : "KO"}
+              </Text>
+              <Text style={styles.itemScore}>{item.score}</Text>
+            </View>
+          ))}
+          <PdfFooter />
+        </Page>
+      )}
+
+      {/* ═══ PAGE 4 — Action Plan (full audit only) ═══ */}
       {!isExpress && actions.length > 0 && (
         <Page size="A4" style={styles.page}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.logo}>
-              <View style={styles.logoMark}>
-                <Text style={{ color: MCVA.white, fontSize: 14, fontWeight: 700 }}>+</Text>
-              </View>
-              <View>
-              <Text style={styles.logoText}>MCVA</Text>
-              <Text style={styles.logoSub}>AI CONSULTING</Text>
-            </View>
-            </View>
-            <Text style={styles.headerDate}>{date}</Text>
-          </View>
-          <View style={styles.accentBar} />
-
-          <Text style={styles.title}>Plan d'action</Text>
+          <PdfHeader date={date} />
+          <Text style={styles.eyebrow}>PLAN D&apos;ACTION</Text>
+          <Text style={styles.title}>Recommandations strategiques</Text>
           <Text style={styles.subtitle}>
-            {audit.domain} — {actions.length} recommandations priorisees
+            {audit.domain} — {actions.length} actions priorisees
           </Text>
 
           {/* Summary counters */}
@@ -767,11 +772,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
 
           {/* Action cards */}
           {actions.map((action, idx) => (
-            <View
-              key={action.id || idx}
-              style={styles.actionCard}
-              wrap={false}
-            >
+            <View key={action.id || idx} style={styles.actionCard} wrap={false}>
               <View style={styles.actionHeader}>
                 <Text
                   style={[
@@ -783,9 +784,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
                 </Text>
                 <Text style={styles.actionTitle}>{action.title}</Text>
               </View>
-
               <Text style={styles.actionDescription}>{action.description}</Text>
-
               <View style={styles.actionMeta}>
                 <Text style={styles.actionMetaItem}>
                   Impact : <Text style={styles.actionMetaValue}>+{action.impact_points} pts</Text>
@@ -800,37 +799,16 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
             </View>
           ))}
 
-          {/* Footer */}
-          <View style={styles.footer} fixed>
-            <Text>MCVA Consulting SA — Confidentiel</Text>
-            <Text
-              render={({ pageNumber, totalPages }) =>
-                `${pageNumber} / ${totalPages}`
-              }
-            />
-          </View>
+          <PdfFooter />
         </Page>
       )}
 
-      {/* Benchmark Ranking Page (full audit only, if benchmark data exists) */}
+      {/* ═══ PAGE 5 — Benchmark Ranking (full audit + benchmark data) ═══ */}
       {!isExpress && benchmarkRanking && benchmarkRanking.domains.length > 0 && (
         <Page size="A4" style={styles.page}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.logo}>
-              <View style={styles.logoMark}>
-                <Text style={{ color: MCVA.white, fontSize: 14, fontWeight: 700 }}>+</Text>
-              </View>
-              <View>
-              <Text style={styles.logoText}>MCVA</Text>
-              <Text style={styles.logoSub}>AI CONSULTING</Text>
-            </View>
-            </View>
-            <Text style={styles.headerDate}>{date}</Text>
-          </View>
-          <View style={styles.accentBar} />
-
-          <Text style={styles.title}>Positionnement sectoriel</Text>
+          <PdfHeader date={date} />
+          <Text style={styles.eyebrow}>POSITIONNEMENT</Text>
+          <Text style={styles.title}>Classement sectoriel</Text>
           <Text style={styles.subtitle}>
             {benchmarkRanking.benchmarkName} — {benchmarkRanking.geographicScope}
           </Text>
@@ -881,7 +859,6 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
             <Text style={[styles.rankingCellBold, { width: 55, textAlign: "center" }]}>Rang SEO</Text>
             <Text style={[styles.rankingCellBold, { width: 55, textAlign: "center" }]}>Rang GEO</Text>
           </View>
-
           {benchmarkRanking.domains
             .sort((a, b) => (a.rank_seo ?? 999) - (b.rank_seo ?? 999))
             .map((d) => {
@@ -889,31 +866,22 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
               return (
                 <View
                   key={d.domain}
-                  style={[
-                    styles.rankingRow,
-                    isClient ? styles.rankingRowHighlight : {},
-                  ]}
+                  style={[styles.rankingRow, isClient ? styles.rankingRowHighlight : {}]}
                   wrap={false}
                 >
                   <Text style={[isClient ? styles.rankingCellBold : styles.rankingCell, { width: 30 }]}>
                     {d.rank_seo ?? "-"}
                   </Text>
                   <Text style={[isClient ? styles.rankingCellBold : styles.rankingCell, { flex: 1 }]}>
-                    {d.domain}{isClient ? " ★" : ""}
+                    {d.domain}
                   </Text>
                   <Text
-                    style={[
-                      styles.rankingCellBold,
-                      { width: 55, textAlign: "center", color: getScoreColor(d.score_seo ?? 0) },
-                    ]}
+                    style={[styles.rankingCellBold, { width: 55, textAlign: "center", color: getScoreColor(d.score_seo ?? 0) }]}
                   >
                     {d.score_seo ?? "-"}
                   </Text>
                   <Text
-                    style={[
-                      styles.rankingCellBold,
-                      { width: 55, textAlign: "center", color: getScoreColor(d.score_geo ?? 0) },
-                    ]}
+                    style={[styles.rankingCellBold, { width: 55, textAlign: "center", color: getScoreColor(d.score_geo ?? 0) }]}
                   >
                     {d.score_geo ?? "-"}
                   </Text>
@@ -927,15 +895,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
               );
             })}
 
-          {/* Footer */}
-          <View style={styles.footer} fixed>
-            <Text>MCVA Consulting SA — Confidentiel</Text>
-            <Text
-              render={({ pageNumber, totalPages }) =>
-                `${pageNumber} / ${totalPages}`
-              }
-            />
-          </View>
+          <PdfFooter />
         </Page>
       )}
     </Document>
