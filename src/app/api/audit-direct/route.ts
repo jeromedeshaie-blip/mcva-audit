@@ -320,7 +320,7 @@ export async function POST(request: NextRequest) {
       score_core_eeat: coreEeatScores,
       score_cite: citeScores,
       seo_provider: seoProvider.name,
-      seo_data: enrichedSeoData,
+      seo_data: { ...enrichedSeoData, _debug_log: log },
       geo_provider: process.env.GEO_PROVIDER || "direct_ai",
       geo_data: geoData,
       competitors,
