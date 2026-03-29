@@ -83,6 +83,16 @@ function AuditCompletContent() {
         }),
       });
 
+      // Handle non-JSON responses (Vercel timeout pages, 502/504 errors)
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        const text = await res.text();
+        if (res.status === 504 || res.status === 502) {
+          throw new Error("L'audit a depasse le temps limite (60s). Essayez en qualite 'eco' pour un audit plus rapide.");
+        }
+        throw new Error(`Erreur serveur (${res.status}). Veuillez reessayer.`);
+      }
+
       const data = await res.json();
 
       if (!res.ok) {

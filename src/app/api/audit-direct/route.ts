@@ -124,27 +124,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Scrape failed", detail: e.message, log }, { status: 500 });
     }
 
-    // --- Step 2: Data collection (SEO + GEO) in parallel ---
-    log.push(`[${elapsed()}] Starting data collection...`);
+    // --- Step 2: EVERYTHING in parallel (data + scoring) to fit in 60s ---
+    log.push(`[${elapsed()}] Starting all tasks in parallel...`);
 
     const brandName = extractBrandName(html, parsedDomain);
     const coreEeatDims = getCoreEeatDimensions("full");
     const citeDims = getCiteDimensions("full");
 
-    const [seoResult, geoResult, competitorsResult] = await Promise.allSettled([
+    // Run data collection AND all scoring in one massive Promise.allSettled
+    // This is safe: the earlier "credits exhausted" error was the real issue, not rate limits
+    const allResults = await Promise.allSettled([
+      // [0] SEO data
       (async () => {
         const provider = await createSeoProvider();
         return provider.getDomainOverview(parsedDomain);
       })(),
+      // [1] GEO data
       (async () => {
         const provider = await createGeoProvider();
         return provider.getAIVisibility(brandName, sector, parsedDomain, quality);
       })(),
+      // [2] Competitors
       (async () => {
         const provider = await createSeoProvider();
         return provider.getCompetitors(parsedDomain);
       })(),
+      // [3..3+N-1] CORE-EEAT dimensions (all in parallel)
+      ...coreEeatDims.map((dim) =>
+        scoreOneDimension(html, url, dim, "full", quality)
+      ),
+      // [3+N..end] CITE dimensions (all in parallel)
+      ...citeDims.map((dim) =>
+        scoreOneCiteDimension(html, url, dim, "full", quality)
+      ),
     ]);
+
+    // Extract data results
+    const seoResult = allResults[0];
+    const geoResult = allResults[1];
+    const competitorsResult = allResults[2];
+    const scoringResults = allResults.slice(3);
 
     const seoData = seoResult.status === "fulfilled" ? seoResult.value : getEmptySeoData();
     const geoData = geoResult.status === "fulfilled" ? geoResult.value : getEmptyGeoData();
@@ -152,37 +171,6 @@ export async function POST(request: NextRequest) {
 
     if (seoResult.status === "rejected") log.push(`[${elapsed()}] SEO data failed: ${seoResult.reason?.message}`);
     if (geoResult.status === "rejected") log.push(`[${elapsed()}] GEO data failed: ${geoResult.reason?.message}`);
-    log.push(`[${elapsed()}] Data collection done. SEO=${seoResult.status}, GEO=${geoResult.status}`);
-
-    // --- Step 3: LLM Scoring in batches of 4 to avoid rate limits ---
-    // Batch helper: runs promises in groups of batchSize
-    async function runInBatches<T>(
-      tasks: (() => Promise<T>)[],
-      batchSize: number
-    ): Promise<PromiseSettledResult<T>[]> {
-      const results: PromiseSettledResult<T>[] = [];
-      for (let i = 0; i < tasks.length; i += batchSize) {
-        const batch = tasks.slice(i, i + batchSize);
-        const batchResults = await Promise.allSettled(batch.map((fn) => fn()));
-        results.push(...batchResults);
-      }
-      return results;
-    }
-
-    // Build all scoring tasks
-    const scoringTasks: (() => Promise<Omit<AuditItem, "id" | "audit_id">[]>)[] = [
-      ...coreEeatDims.map((dim) => () => {
-        log.push(`[${elapsed()}] Scoring CORE-EEAT ${dim}...`);
-        return scoreOneDimension(html, url, dim, "full", quality);
-      }),
-      ...citeDims.map((dim) => () => {
-        log.push(`[${elapsed()}] Scoring CITE ${dim}...`);
-        return scoreOneCiteDimension(html, url, dim, "full", quality);
-      }),
-    ];
-
-    log.push(`[${elapsed()}] Starting ${scoringTasks.length} scoring tasks (batches of 4)...`);
-    const scoringResults = await runInBatches(scoringTasks, 4);
 
     // Collect scored items with detailed error logging
     const allScoredItems: Omit<AuditItem, "id" | "audit_id">[] = [];
@@ -192,14 +180,14 @@ export async function POST(request: NextRequest) {
       const dimName = allDims[i] || `dim-${i}`;
       const framework = i < coreEeatDims.length ? "CORE-EEAT" : "CITE";
       if (result.status === "fulfilled" && Array.isArray(result.value)) {
-        allScoredItems.push(...result.value);
-        log.push(`[${elapsed()}] ${framework} ${dimName}: ${result.value.length} items scored`);
+        allScoredItems.push(...(result.value as Omit<AuditItem, "id" | "audit_id">[]));
+        log.push(`[${elapsed()}] ${framework} ${dimName}: ${(result.value as any[]).length} items`);
       } else if (result.status === "rejected") {
         log.push(`[${elapsed()}] ${framework} ${dimName} FAILED: ${result.reason?.message || result.reason}`);
       }
     }
 
-    log.push(`[${elapsed()}] Scored items: ${allScoredItems.length}`);
+    log.push(`[${elapsed()}] Total scored items: ${allScoredItems.length}`);
 
     // Separate CORE-EEAT and CITE items
     const coreEeatItems = allScoredItems.filter((i: any) => i.framework === "core_eeat");
