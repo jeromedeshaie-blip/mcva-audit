@@ -118,7 +118,7 @@ export default function AuditExpressPage() {
     <div className="space-y-6">
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0A0808] via-[#1A0F0F] to-[#2A1515] p-6 text-white">
         <div className="absolute inset-0 opacity-10"
-          style={{ backgroundImage: "radial-gradient(circle at 80% 30%, #D4553A 0%, transparent 60%)" }}
+          style={{ backgroundImage: "radial-gradient(circle at 80% 30%, #A53535 0%, transparent 60%)" }}
         />
         <div className="relative">
           <h1 className="font-heading text-2xl font-bold tracking-tight">Audit Express</h1>
@@ -272,7 +272,7 @@ export default function AuditExpressPage() {
             auditType="express"
           />
 
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#8B2C2C]/10 via-[#D4553A]/10 to-[#E8937A]/10 p-6 ring-1 ring-[#D4553A]/20">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#8B2C2C]/10 via-[#A53535]/10 to-[#7A2525]/10 p-6 ring-1 ring-[#A53535]/20">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-heading font-semibold">

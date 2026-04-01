@@ -40,10 +40,10 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  /* MCVA Signal Coral */
-  --color-coral: #D4553A;
-  --color-coral-light: #E8937A;
-  --color-coral-peach: #F5C4B0;
+  /* MCVA Red Spectrum v3.0 */
+  --color-rouge-vif: #A53535;
+  --color-rouge-sombre: #7A2525;
+  --color-bordeaux: #6B1E1E;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -53,10 +53,10 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ── MCVA Consulting SA — Charte graphique v2.2 ── */
+/* ── MCVA Consulting SA — Charte graphique v3.0 ── */
 :root {
-  /* Paper #F8F6F1 */
-  --background: oklch(0.975 0.005 85);
+  /* Pure White #FFFFFF */
+  --background: oklch(1 0 0);
   /* Ink #0E0E0E */
   --foreground: oklch(0.13 0 0);
   /* White #FFFFFF */
@@ -66,20 +66,20 @@
   --popover-foreground: oklch(0.13 0 0);
   /* Swiss Red #8B2C2C */
   --primary: oklch(0.38 0.12 25);
-  --primary-foreground: oklch(0.975 0.005 85);
-  /* Stone #E8E4DD */
-  --secondary: oklch(0.915 0.006 85);
+  --primary-foreground: oklch(1 0 0);
+  /* Neutral light */
+  --secondary: oklch(0.95 0 0);
   --secondary-foreground: oklch(0.13 0 0);
-  /* Mist #F2F0EB */
-  --muted: oklch(0.955 0.005 85);
+  /* Neutral muted */
+  --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.45 0 0);
-  /* Stone accent */
-  --accent: oklch(0.955 0.005 85);
+  /* Neutral accent */
+  --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.13 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  /* Stone border */
-  --border: oklch(0.915 0.006 85);
-  --input: oklch(0.915 0.006 85);
+  /* Neutral border */
+  --border: oklch(0.92 0 0);
+  --input: oklch(0.92 0 0);
   --ring: oklch(0.38 0.12 25);
   /* Chart: MCVA spectrum */
   --chart-1: oklch(0.38 0.12 25);
@@ -89,13 +89,13 @@
   --chart-5: oklch(0.88 0.04 45);
   --radius: 0.625rem;
   /* Sidebar */
-  --sidebar: oklch(0.975 0.005 85);
+  --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.13 0 0);
   --sidebar-primary: oklch(0.38 0.12 25);
-  --sidebar-primary-foreground: oklch(0.975 0.005 85);
-  --sidebar-accent: oklch(0.955 0.005 85);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.13 0 0);
-  --sidebar-border: oklch(0.915 0.006 85);
+  --sidebar-border: oklch(0.92 0 0);
   --sidebar-ring: oklch(0.38 0.12 25);
 }
 
@@ -159,7 +159,7 @@
 }
 .mcva-skeleton {
   animation: mcva-pulse 1.5s ease-in-out infinite;
-  background: linear-gradient(90deg, var(--muted) 0%, oklch(0.93 0.005 85) 50%, var(--muted) 100%);
+  background: linear-gradient(90deg, var(--muted) 0%, oklch(0.93 0 0) 50%, var(--muted) 100%);
   background-size: 200% 100%;
 }
 

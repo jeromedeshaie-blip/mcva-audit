@@ -62,7 +62,7 @@ export default function DashboardPage() {
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0A0808] via-[#1A0F0F] to-[#2A1515] p-8 text-white">
         <div className="absolute inset-0 opacity-10"
           style={{
-            backgroundImage: "radial-gradient(circle at 20% 50%, #D4553A 0%, transparent 50%), radial-gradient(circle at 80% 50%, #8B2C2C 0%, transparent 50%)",
+            backgroundImage: "radial-gradient(circle at 20% 50%, #A53535 0%, transparent 50%), radial-gradient(circle at 80% 50%, #8B2C2C 0%, transparent 50%)",
           }}
         />
         <div className="relative">
@@ -78,8 +78,8 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#F8F6F1] to-white">
-          <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#8B2C2C] to-[#D4553A]" />
+        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#FFFFFF] to-white">
+          <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#8B2C2C] to-[#A53535]" />
           <CardContent className="pt-6 pl-6">
             <div className="flex items-center justify-between">
               <div>
@@ -94,8 +94,8 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#F8F6F1] to-white">
-          <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#D4553A] to-[#E8937A]" />
+        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#FFFFFF] to-white">
+          <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#A53535] to-[#7A2525]" />
           <CardContent className="pt-6 pl-6">
             <div className="flex items-center justify-between">
               <div>
@@ -130,13 +130,13 @@ export default function DashboardPage() {
         <CardContent>
           {loading ? (
             <div className="flex items-center gap-3 py-8 justify-center">
-              <div className="w-5 h-5 rounded-full border-2 border-[#D4553A] border-t-transparent animate-spin" />
+              <div className="w-5 h-5 rounded-full border-2 border-[#A53535] border-t-transparent animate-spin" />
               <p className="text-sm text-muted-foreground">Chargement...</p>
             </div>
           ) : recentAudits.length === 0 ? (
             <div className="text-center py-12">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#8B2C2C]/10 to-[#D4553A]/10 mx-auto mb-4 flex items-center justify-center">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-[#D4553A]">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#8B2C2C]/10 to-[#A53535]/10 mx-auto mb-4 flex items-center justify-center">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-[#A53535]">
                   <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               </div>
@@ -198,7 +198,7 @@ export default function DashboardPage() {
                         />
                       </>
                     )}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-muted-foreground/40 group-hover:text-[#D4553A] transition-colors ml-2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-muted-foreground/40 group-hover:text-[#A53535] transition-colors ml-2">
                       <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </div>

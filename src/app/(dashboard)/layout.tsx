@@ -35,7 +35,7 @@ function TessellationMark({ size = 36 }: { size?: number }) {
           <stop offset="40%" stopColor="#8B2C2C" />
           <stop offset="60%" stopColor="#A83D33" />
           <stop offset="80%" stopColor="#C44A38" />
-          <stop offset="100%" stopColor="#D4553A" />
+          <stop offset="100%" stopColor="#A53535" />
         </linearGradient>
       </defs>
       {/* 4 carres de la grille */}
@@ -44,17 +44,17 @@ function TessellationMark({ size = 36 }: { size?: number }) {
       <rect x="2" y="34" width="28" height="28" rx="4" fill="url(#tessellation-g)" />
       <rect x="34" y="34" width="28" height="28" rx="4" fill="url(#tessellation-g)" />
       {/* Croix suisse dans le carre bas-droite */}
-      <rect x="44" y="38" width="8" height="20" rx="1.5" fill="#F8F6F1" />
-      <rect x="38" y="44" width="20" height="8" rx="1.5" fill="#F8F6F1" />
+      <rect x="44" y="38" width="8" height="20" rx="1.5" fill="#F0E8E4" />
+      <rect x="38" y="44" width="20" height="8" rx="1.5" fill="#F0E8E4" />
       {/* Micro-connexions Blush */}
-      <line x1="30" y1="16" x2="34" y2="16" stroke="#E8937A" strokeWidth="1" strokeLinecap="round" opacity="0.35" />
-      <line x1="16" y1="30" x2="16" y2="34" stroke="#E8937A" strokeWidth="1" strokeLinecap="round" opacity="0.35" />
-      <line x1="30" y1="48" x2="34" y2="48" stroke="#E8937A" strokeWidth="1" strokeLinecap="round" opacity="0.45" />
-      <line x1="48" y1="30" x2="48" y2="34" stroke="#E8937A" strokeWidth="1" strokeLinecap="round" opacity="0.45" />
-      <circle cx="31" cy="16" r="1.5" fill="#E8937A" opacity="0.35" />
-      <circle cx="16" cy="31" r="1.5" fill="#E8937A" opacity="0.35" />
-      <circle cx="31" cy="48" r="1.5" fill="#E8937A" opacity="0.45" />
-      <circle cx="48" cy="31" r="1.5" fill="#E8937A" opacity="0.45" />
+      <line x1="30" y1="16" x2="34" y2="16" stroke="#A53535" strokeWidth="1" strokeLinecap="round" opacity="0.35" />
+      <line x1="16" y1="30" x2="16" y2="34" stroke="#A53535" strokeWidth="1" strokeLinecap="round" opacity="0.35" />
+      <line x1="30" y1="48" x2="34" y2="48" stroke="#A53535" strokeWidth="1" strokeLinecap="round" opacity="0.45" />
+      <line x1="48" y1="30" x2="48" y2="34" stroke="#A53535" strokeWidth="1" strokeLinecap="round" opacity="0.45" />
+      <circle cx="31" cy="16" r="1.5" fill="#A53535" opacity="0.35" />
+      <circle cx="16" cy="31" r="1.5" fill="#A53535" opacity="0.35" />
+      <circle cx="31" cy="48" r="1.5" fill="#A53535" opacity="0.45" />
+      <circle cx="48" cy="31" r="1.5" fill="#A53535" opacity="0.45" />
     </svg>
   );
 }
@@ -73,14 +73,14 @@ export default function DashboardLayout({
         <div className="max-w-7xl mx-auto px-6 h-16 md:h-20 flex items-center justify-between">
           <div className="flex items-center gap-8">
             {/* Tessellation Mark v2.3 + Wordmark */}
-            <Link href="/" className="inline-flex items-center gap-3 group">
+            <Link href="/" className="inline-flex items-start gap-3 group">
               <TessellationMark size={36} />
-              <div className="flex flex-col leading-none">
-                <span className="font-display font-bold text-lg tracking-[0.12em] text-white">
+              <div className="flex flex-col justify-between leading-none h-[36px]">
+                <span className="font-display font-bold text-lg tracking-[0.12em] text-white leading-none">
                   MCVA
                 </span>
-                <div className="w-full h-[2px] bg-[#D4553A] my-[3px]" />
-                <span className="font-display font-medium text-[9px] tracking-[0.25em] uppercase whitespace-nowrap text-white/45">
+                <div className="w-full h-[1.5px] bg-[#8B2C2C]" />
+                <span className="font-display font-medium text-[9px] tracking-[0.25em] uppercase whitespace-nowrap text-white/40 leading-none">
                   Audit Platform
                 </span>
               </div>
@@ -96,7 +96,7 @@ export default function DashboardLayout({
                     href={item.href}
                     className={`text-[13px] font-display font-medium uppercase tracking-widest transition-colors whitespace-nowrap ${
                       isActive
-                        ? "text-[#D4553A]"
+                        ? "text-[#A53535]"
                         : "text-white/60 hover:text-white"
                     }`}
                   >
@@ -116,7 +116,7 @@ export default function DashboardLayout({
         <div
           className="h-[3px]"
           style={{
-            background: "linear-gradient(90deg, #4A1515 0%, #8B2C2C 20%, #D4553A 45%, #E8937A 65%, #F5C4B0 80%, #F8F6F1 100%)",
+            background: "linear-gradient(90deg, #4A1515 0%, #8B2C2C 20%, #A53535 45%, #8B2C2C 65%, #7A2525 80%, #5C1A1A 100%)",
           }}
         />
       </header>

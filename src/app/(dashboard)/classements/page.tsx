@@ -171,9 +171,9 @@ export default function ClassementsPage() {
 function RankBadge({ rank }: { rank: number }) {
   if (rank <= 3) {
     const colors = [
-      "bg-gradient-to-br from-[#D4553A] to-[#8B2C2C] text-white shadow-sm",
-      "bg-gradient-to-br from-[#E8937A] to-[#D4553A] text-white shadow-sm",
-      "bg-gradient-to-br from-[#F5C4B0] to-[#E8937A] text-[#4A1515] shadow-sm",
+      "bg-gradient-to-br from-[#A53535] to-[#8B2C2C] text-white shadow-sm",
+      "bg-gradient-to-br from-[#7A2525] to-[#A53535] text-white shadow-sm",
+      "bg-gradient-to-br from-[#5C1A1A] to-[#7A2525] text-white shadow-sm",
     ];
     return (
       <span
@@ -191,7 +191,7 @@ function ScoreCell({ score }: { score: number }) {
     score >= 75
       ? "text-[#2A9D5C]"
       : score >= 50
-        ? "text-[#D4553A]"
+        ? "text-[#A53535]"
         : score >= 25
           ? "text-[#A83D33]"
           : "text-[#8B2C2C]";

@@ -9,7 +9,7 @@ interface ScoreGaugeProps {
 function getScoreColor(score: number): string {
   // MCVA spectrum: from deep Swiss Red (low) → Coral (mid) → success green (high)
   if (score >= 75) return "#2A9D5C"; // vert succes
-  if (score >= 50) return "#D4553A"; // coral MCVA
+  if (score >= 50) return "#A53535"; // rouge vif MCVA
   if (score >= 25) return "#A83D33"; // rouge cuivre
   return "#8B2C2C"; // Swiss Red profond
 }

@@ -55,7 +55,7 @@ export default function AuditDetailPage() {
   if (state === "loading") {
     return (
       <div className="flex items-center justify-center py-20 gap-3">
-        <div className="w-5 h-5 rounded-full border-2 border-[#D4553A] border-t-transparent animate-spin" />
+        <div className="w-5 h-5 rounded-full border-2 border-[#A53535] border-t-transparent animate-spin" />
         <p className="text-sm text-muted-foreground">Chargement de l&apos;audit...</p>
       </div>
     );
@@ -86,7 +86,7 @@ export default function AuditDetailPage() {
           className="absolute inset-0 opacity-10"
           style={{
             backgroundImage:
-              "radial-gradient(circle at 20% 70%, #D4553A 0%, transparent 60%)",
+              "radial-gradient(circle at 20% 70%, #A53535 0%, transparent 60%)",
           }}
         />
         <div className="relative">
@@ -174,7 +174,7 @@ export default function AuditDetailPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3 justify-center py-4">
-              <div className="w-5 h-5 rounded-full border-2 border-[#D4553A] border-t-transparent animate-spin" />
+              <div className="w-5 h-5 rounded-full border-2 border-[#A53535] border-t-transparent animate-spin" />
               <p className="text-muted-foreground">
                 Audit en cours de traitement...
               </p>

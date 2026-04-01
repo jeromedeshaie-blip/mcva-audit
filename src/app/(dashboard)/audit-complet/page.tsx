@@ -202,7 +202,7 @@ function AuditCompletContent() {
     <div className="space-y-6">
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0A0808] via-[#1A0F0F] to-[#2A1515] p-6 text-white">
         <div className="absolute inset-0 opacity-10"
-          style={{ backgroundImage: "radial-gradient(circle at 20% 70%, #D4553A 0%, transparent 60%)" }}
+          style={{ backgroundImage: "radial-gradient(circle at 20% 70%, #A53535 0%, transparent 60%)" }}
         />
         <div className="relative">
           <h1 className="font-heading text-2xl font-bold tracking-tight">Audit Complet</h1>
@@ -302,7 +302,7 @@ function AuditCompletContent() {
               </div>
               <Progress value={progress} />
               <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded-full border-2 border-[#D4553A] border-t-transparent animate-spin" />
+                <div className="w-4 h-4 rounded-full border-2 border-[#A53535] border-t-transparent animate-spin" />
                 <p className="text-xs text-muted-foreground">
                   Etape {Object.keys(STEP_PROGRESS).indexOf(step)}/8 — chaque etape prend 10-30 secondes
                 </p>

@@ -9,40 +9,88 @@ import {
 } from "@react-pdf/renderer";
 import type { Audit, AuditScores, AuditItem, AuditAction } from "@/types/audit";
 
-// ─── Font Setup (MCVA Brand Identity v2.3) ───
-// PDF uses Helvetica (built-in) + Courier (built-in mono) as reliable fallbacks.
-// GeneralSans (woff2) is used in the web app but @react-pdf/renderer
-// doesn't reliably support woff2 on Vercel serverless.
-// The MCVA brand identity is applied via colors, spacing, and layout.
+// ─── Font Setup (MCVA Brand Identity v3.0) ───
+// GeneralSans TTF for headings, DM Sans for body text, DM Mono for scores & codes
+
+import path from "path";
+
+const fontsDir = path.join(process.cwd(), "public", "fonts");
+
+Font.register({
+  family: "GeneralSans",
+  fonts: [
+    { src: path.join(fontsDir, "GeneralSans-Light.ttf"), fontWeight: 300 },
+    { src: path.join(fontsDir, "GeneralSans-Regular.ttf"), fontWeight: 400 },
+    { src: path.join(fontsDir, "GeneralSans-Medium.ttf"), fontWeight: 500 },
+    { src: path.join(fontsDir, "GeneralSans-Semibold.ttf"), fontWeight: 600 },
+    { src: path.join(fontsDir, "GeneralSans-Bold.ttf"), fontWeight: 700 },
+  ],
+});
+
+Font.register({
+  family: "DMMono",
+  fonts: [
+    {
+      src: "https://fonts.gstatic.com/s/dmmono/v14/aFTU7PB1QTsUX8KYhh2aBYyMcKdI.ttf",
+      fontWeight: 400,
+    },
+    {
+      src: "https://fonts.gstatic.com/s/dmmono/v14/aFTR7PB1QTsUX8KYvrGyIYSnbKX9Rlk.ttf",
+      fontWeight: 500,
+    },
+  ],
+});
+
+Font.register({
+  family: "DMSans",
+  fonts: [
+    {
+      src: "https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g4vlH9VoD8CmcqZG40F9JadbnoEwA_opyLRh6Dg.ttf",
+      fontWeight: 400,
+    },
+    {
+      src: "https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g4vlH9VoD8CmcqZG40F9JadbnoEwAop-yLRh6Dg.ttf",
+      fontWeight: 500,
+    },
+    {
+      src: "https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g4vlH9VoD8CmcqZG40F9JadbnoEwARpiyLRh6Dg.ttf",
+      fontWeight: 600,
+    },
+    {
+      src: "https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g4vlH9VoD8CmcqZG40F9JadbnoEwAX5iyLRh6Dg.ttf",
+      fontWeight: 700,
+    },
+  ],
+});
 
 // Disable hyphenation for cleaner text
 Font.registerHyphenationCallback((word) => [word]);
 
-const FONT_HEADING = "Helvetica";
-const FONT_MONO = "Courier";
+const FONT_HEADING = "GeneralSans";
+const FONT_BODY = "DMSans";
+const FONT_MONO = "DMMono";
 
-// ─── MCVA Brand Identity v2.3 ───
+// ─── MCVA Brand Identity v3.0 ───
 const MCVA = {
-  // Identity
+  // Identitaires (v3.0)
   red: "#8B2C2C",
-  coral: "#D4553A",
   ink: "#0E0E0E",
   abyss: "#0A0808",
-  paper: "#F8F6F1",
-  mist: "#F2F0EB",
-  stone: "#E8E4DD",
   white: "#FFFFFF",
-  // Spectre
+  // Spectre rouge (v3.0 — rouges uniquement, pas de coral)
   gradAbyss: "#4A1515",
-  blush: "#E8937A",
-  peach: "#F5C4B0",
+  bordeaux: "#5C1A1A",
+  rougeSombre: "#7A2525",
+  rougeVif: "#A53535",
   // Fonctionnelles (scores)
   green: "#22C55E",
   amber: "#F59E0B",
   orange: "#F97316",
   redAlert: "#EF4444",
-  // Neutres
+  // Neutres PDF
   gray: "#6B7280",
+  grayLight: "#F5F5F5",
+  grayBorder: "#E5E7EB",
 };
 
 const styles = StyleSheet.create({
@@ -85,7 +133,7 @@ const styles = StyleSheet.create({
   },
   logoBar: {
     height: 2,
-    backgroundColor: MCVA.coral,
+    backgroundColor: MCVA.rougeVif,
     marginVertical: 2,
   },
   logoSub: {
@@ -96,7 +144,7 @@ const styles = StyleSheet.create({
     color: MCVA.gray,
   },
   headerDate: {
-    fontFamily: FONT_HEADING,
+    fontFamily: FONT_BODY,
     fontSize: 9,
     fontWeight: 400,
     color: MCVA.gray,
@@ -126,7 +174,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   subtitle: {
-    fontFamily: FONT_HEADING,
+    fontFamily: FONT_BODY,
     fontSize: 12,
     fontWeight: 400,
     color: MCVA.gray,
@@ -143,9 +191,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderRadius: 8,
-    backgroundColor: MCVA.mist,
+    backgroundColor: MCVA.grayLight,
     borderWidth: 0.5,
-    borderColor: MCVA.stone,
+    borderColor: MCVA.grayBorder,
     width: 140,
   },
   scoreValue: {
@@ -197,7 +245,7 @@ const styles = StyleSheet.create({
   dimensionBarBg: {
     flex: 1,
     height: 8,
-    backgroundColor: MCVA.mist,
+    backgroundColor: MCVA.grayLight,
     borderRadius: 4,
     marginRight: 8,
   },
@@ -218,7 +266,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderBottomWidth: 0.5,
-    borderBottomColor: MCVA.stone,
+    borderBottomColor: MCVA.grayBorder,
   },
   itemCode: {
     fontFamily: FONT_MONO,
@@ -228,7 +276,7 @@ const styles = StyleSheet.create({
     fontWeight: 500,
   },
   itemLabel: {
-    fontFamily: FONT_HEADING,
+    fontFamily: FONT_BODY,
     flex: 1,
     fontSize: 8,
     fontWeight: 400,
@@ -255,6 +303,7 @@ const styles = StyleSheet.create({
     right: 50,
     flexDirection: "row",
     justifyContent: "space-between",
+    fontFamily: FONT_BODY,
     fontSize: 8,
     fontWeight: 400,
     color: MCVA.gray,
@@ -263,10 +312,10 @@ const styles = StyleSheet.create({
   ctaBox: {
     marginTop: 24,
     padding: 16,
-    backgroundColor: MCVA.mist,
+    backgroundColor: MCVA.grayLight,
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: MCVA.coral,
+    borderLeftColor: MCVA.rougeVif,
   },
   ctaTitle: {
     fontFamily: FONT_HEADING,
@@ -276,7 +325,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   ctaText: {
-    fontFamily: FONT_HEADING,
+    fontFamily: FONT_BODY,
     fontSize: 9,
     fontWeight: 400,
     color: MCVA.gray,
@@ -288,7 +337,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     borderWidth: 0.5,
-    borderColor: MCVA.stone,
+    borderColor: MCVA.grayBorder,
     backgroundColor: MCVA.white,
   },
   actionHeader: {
@@ -314,7 +363,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actionDescription: {
-    fontFamily: FONT_HEADING,
+    fontFamily: FONT_BODY,
     fontSize: 8.5,
     fontWeight: 400,
     color: "#374151",
@@ -327,7 +376,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actionMetaItem: {
-    fontFamily: FONT_HEADING,
+    fontFamily: FONT_BODY,
     fontSize: 7.5,
     fontWeight: 400,
     color: MCVA.gray,
@@ -344,7 +393,7 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     fontSize: 7,
     fontWeight: 500,
-    backgroundColor: MCVA.mist,
+    backgroundColor: MCVA.grayLight,
     color: MCVA.red,
   },
   // ─── Action Summary ───
@@ -353,10 +402,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between" as const,
     marginBottom: 16,
     padding: 12,
-    backgroundColor: MCVA.mist,
+    backgroundColor: MCVA.grayLight,
     borderRadius: 8,
     borderWidth: 0.5,
-    borderColor: MCVA.stone,
+    borderColor: MCVA.grayBorder,
   },
   actionSummaryItem: {
     alignItems: "center" as const,
@@ -378,17 +427,17 @@ const styles = StyleSheet.create({
   rankingRow: {
     flexDirection: "row" as const,
     borderBottomWidth: 0.5,
-    borderBottomColor: MCVA.stone,
+    borderBottomColor: MCVA.grayBorder,
     paddingVertical: 5,
     paddingHorizontal: 8,
   },
   rankingRowHighlight: {
-    backgroundColor: MCVA.mist,
+    backgroundColor: MCVA.grayLight,
     borderLeftWidth: 3,
     borderLeftColor: MCVA.red,
   },
   rankingCell: {
-    fontFamily: FONT_HEADING,
+    fontFamily: FONT_BODY,
     fontSize: 8.5,
     fontWeight: 400,
   },
@@ -398,9 +447,9 @@ const styles = StyleSheet.create({
     fontWeight: 600,
   },
   rankingHeader: {
-    backgroundColor: MCVA.mist,
+    backgroundColor: MCVA.grayLight,
     borderBottomWidth: 1,
-    borderBottomColor: MCVA.stone,
+    borderBottomColor: MCVA.grayBorder,
   },
   rankingPosition: {
     fontFamily: FONT_MONO,
@@ -413,7 +462,7 @@ const styles = StyleSheet.create({
     justifyContent: "center" as const,
     padding: 16,
     borderRadius: 8,
-    backgroundColor: MCVA.mist,
+    backgroundColor: MCVA.grayLight,
     width: 120,
   },
   // ─── SPA Disclaimer ───
@@ -433,7 +482,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   spaDisclaimerText: {
-    fontFamily: FONT_HEADING,
+    fontFamily: FONT_BODY,
     fontSize: 8,
     fontWeight: 400,
     color: "#78350F",
@@ -505,7 +554,7 @@ function PdfHeader({ date }: { date: string }) {
       <View style={styles.header}>
         <View style={styles.logo}>
           <View style={styles.logoMark}>
-            <Text style={{ color: MCVA.paper, fontSize: 16, fontWeight: 700 }}>+</Text>
+            <Text style={{ color: MCVA.white, fontSize: 16, fontWeight: 700 }}>+</Text>
           </View>
           <View>
             <Text style={styles.logoText}>MCVA</Text>
@@ -702,7 +751,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
           <PdfHeader date={date} />
           <Text style={styles.eyebrow}>DETAIL DES CRITERES</Text>
           <Text style={styles.sectionTitle}>Criteres CORE-EEAT ({coreEeatItems.length} evalues)</Text>
-          <View style={[styles.itemRow, { backgroundColor: MCVA.mist, borderBottomWidth: 1 }]}>
+          <View style={[styles.itemRow, { backgroundColor: MCVA.grayLight, borderBottomWidth: 1 }]}>
             <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
             <Text style={[styles.itemLabel, { fontWeight: 700 }]}>Critere</Text>
             <Text style={[styles.itemStatus, { fontWeight: 700 }]}>Statut</Text>
@@ -728,7 +777,7 @@ export function AuditPdfDocument({ audit, scores, items, actions = [], benchmark
           <PdfHeader date={date} />
           <Text style={styles.eyebrow}>DETAIL DES CRITERES</Text>
           <Text style={styles.sectionTitle}>Criteres CITE ({citeItems.length} evalues)</Text>
-          <View style={[styles.itemRow, { backgroundColor: MCVA.mist, borderBottomWidth: 1 }]}>
+          <View style={[styles.itemRow, { backgroundColor: MCVA.grayLight, borderBottomWidth: 1 }]}>
             <Text style={[styles.itemCode, { fontWeight: 700 }]}>Code</Text>
             <Text style={[styles.itemLabel, { fontWeight: 700 }]}>Critere</Text>
             <Text style={[styles.itemStatus, { fontWeight: 700 }]}>Statut</Text>

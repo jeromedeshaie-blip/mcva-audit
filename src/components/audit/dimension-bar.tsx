@@ -25,14 +25,14 @@ const CITE_LABELS: Record<string, string> = {
 
 function getBarGradient(score: number): string {
   if (score >= 75) return "from-[#2A9D5C] to-[#34D399]";
-  if (score >= 50) return "from-[#D4553A] to-[#E8937A]";
-  if (score >= 25) return "from-[#A83D33] to-[#D4553A]";
+  if (score >= 50) return "from-[#8B2C2C] to-[#A53535]";
+  if (score >= 25) return "from-[#7A2525] to-[#8B2C2C]";
   return "from-[#6B2020] to-[#8B2C2C]";
 }
 
 function getScoreColor(score: number): string {
   if (score >= 75) return "text-[#2A9D5C]";
-  if (score >= 50) return "text-[#D4553A]";
+  if (score >= 50) return "text-[#A53535]";
   if (score >= 25) return "text-[#A83D33]";
   return "text-[#8B2C2C]";
 }

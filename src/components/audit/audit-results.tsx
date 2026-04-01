@@ -319,9 +319,9 @@ function StatusBadge({ status }: { status: string }) {
 function PriorityBadge({ priority }: { priority: string }) {
   const colors: Record<string, string> = {
     P1: "bg-[#8B2C2C] text-white",
-    P2: "bg-[#D4553A] text-white",
-    P3: "bg-[#E8937A] text-white",
-    P4: "bg-[#F5C4B0] text-[#4A1515]",
+    P2: "bg-[#A53535] text-white",
+    P3: "bg-[#7A2525] text-white",
+    P4: "bg-[#6B7280] text-white",
   };
   return (
     <span
