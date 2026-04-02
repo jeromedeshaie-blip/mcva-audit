@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Optimize for Vercel deployment
+  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
   experimental: {
     // Enable server actions if needed later
   },
