@@ -156,7 +156,7 @@ export default function AuditDetailPage() {
                 </Button>
                 {audit.audit_type === "express" && (
                   <Link
-                    href={`/audit-complet?url=${encodeURIComponent(audit.url)}&sector=${encodeURIComponent(audit.sector || "")}&from=${audit.id}`}
+                    href={`/nouveau-audit?url=${encodeURIComponent(audit.url)}&sector=${encodeURIComponent(audit.sector || "")}&from=${audit.id}`}
                   >
                     <Button className="bg-white text-[#0A0808] hover:bg-white/90">
                       Lancer l&apos;audit complet

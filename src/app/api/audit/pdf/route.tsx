@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch audit data in parallel
-    const [auditRes, scoresRes, itemsRes, actionsRes] = await Promise.all([
+    const [auditRes, scoresRes, itemsRes, actionsRes, uploadsRes] = await Promise.all([
       supabase.from("audits").select("*").eq("id", auditId).single(),
       supabase.from("audit_scores").select("*").eq("audit_id", auditId).single(),
       supabase
@@ -42,6 +42,11 @@ export async function GET(request: NextRequest) {
         .select("*")
         .eq("audit_id", auditId)
         .order("priority"),
+      supabase
+        .from("audit_uploads")
+        .select("source, parsed_data, status")
+        .eq("audit_id", auditId)
+        .eq("status", "parsed"),
     ]);
 
     if (!auditRes.data || !scoresRes.data) {
@@ -99,6 +104,37 @@ export async function GET(request: NextRequest) {
         theme: audit.theme || (audit.themes?.[0]) || "seo",
       });
     } else if (auditType === "ultra") {
+      // Extract parsed Semrush/Qwairy data from uploads
+      const uploads = uploadsRes.data || [];
+      const semrushUpload = uploads.find((u: any) => u.source === "semrush");
+      const qwairyUpload = uploads.find((u: any) => u.source === "qwairy");
+
+      const semrushData = semrushUpload?.parsed_data
+        ? {
+            rank_ch: semrushUpload.parsed_data.rank_ch,
+            mots_cles: semrushUpload.parsed_data.keywords?.length ?? semrushUpload.parsed_data.mots_cles,
+            trafic: semrushUpload.parsed_data.trafic ?? semrushUpload.parsed_data.traffic,
+            authority_score: semrushUpload.parsed_data.authority_score,
+            backlinks: semrushUpload.parsed_data.backlinks,
+            top_keywords: semrushUpload.parsed_data.keywords?.slice(0, 10),
+            competitors: semrushUpload.parsed_data.competitors,
+          }
+        : undefined;
+
+      const qwairyData = qwairyUpload?.parsed_data
+        ? {
+            mention_rate: qwairyUpload.parsed_data.mention_rate,
+            source_rate: qwairyUpload.parsed_data.source_rate,
+            sov: qwairyUpload.parsed_data.sov ?? qwairyUpload.parsed_data.share_of_voice,
+            sentiment: qwairyUpload.parsed_data.sentiment,
+            prompts: qwairyUpload.parsed_data.prompts,
+            responses: qwairyUpload.parsed_data.responses,
+            llms: qwairyUpload.parsed_data.llms,
+            llm_distribution: qwairyUpload.parsed_data.llm_distribution ?? qwairyUpload.parsed_data.per_llm,
+            sov_competitors: qwairyUpload.parsed_data.sov_competitors ?? qwairyUpload.parsed_data.competitors,
+          }
+        : undefined;
+
       html = renderUltraAuditPdf({
         audit,
         scores,
@@ -118,6 +154,8 @@ export async function GET(request: NextRequest) {
           clientName: audit.brand_name || audit.domain,
           sector: audit.sector || undefined,
         },
+        semrushData,
+        qwairyData,
       });
     } else {
       html = renderAuditPdf({

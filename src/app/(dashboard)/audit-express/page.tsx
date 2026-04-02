@@ -110,7 +110,7 @@ export default function AuditExpressPage() {
   const handleLaunchFull = async () => {
     if (!url) return;
     router.push(
-      `/audit-complet?url=${encodeURIComponent(url)}&sector=${encodeURIComponent(sector)}&quality=${quality}&from=${auditId}`
+      `/nouveau-audit?url=${encodeURIComponent(url)}&sector=${encodeURIComponent(sector)}&quality=${quality}&from=${auditId}`
     );
   };
 
