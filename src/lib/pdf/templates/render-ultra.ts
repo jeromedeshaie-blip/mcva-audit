@@ -129,6 +129,12 @@ export interface QwairyData {
     position_avg: number;
     llms: string;
   }[];
+  sentiment_benchmark?: {
+    name: string;
+    sentiment: number;
+    rank: number;
+  }[];
+  sentiment_insight?: string;
 }
 
 export interface UltraAuditData extends PdfRenderData {
@@ -716,6 +722,27 @@ function renderGeoPage2(data: UltraAuditData): string {
     ${renderFindingsFromItems(socialItems, 3)}`;
   }
 
+  // Sentiment benchmark (if Qwairy data has it)
+  let sentimentBenchmark = "";
+  if (hasQwairy && qwairyData!.sentiment_benchmark && qwairyData!.sentiment_benchmark.length > 0) {
+    const clientName = data.clientContext?.clientName ?? data.audit.domain;
+    sentimentBenchmark = `<h2>3.9 Benchmark Sentiment</h2>
+    <table class="tbl-compact">
+      <thead><tr><th>Cabinet</th><th style="text-align:center">Sentiment</th><th style="text-align:center">Rang</th></tr></thead>
+      <tbody>
+        ${qwairyData!.sentiment_benchmark
+          .sort((a, b) => a.rank - b.rank)
+          .map((s) => {
+            const isClient = s.name.toLowerCase().includes(clientName.toLowerCase().split(" ")[0]);
+            const bg = isClient ? ' style="background:var(--cream);border-left:3px solid var(--red);font-weight:600"' : "";
+            return `<tr${bg}><td>${esc(s.name)}${isClient ? " \u2605" : ""}</td><td style="text-align:center" class="text-mono ${s.sentiment >= 80 ? "text-green" : s.sentiment >= 70 ? "text-orange" : "text-crit"}">${s.sentiment}/100</td><td style="text-align:center">#${s.rank}</td></tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>
+    ${qwairyData!.sentiment_insight ? `<div class="callout" style="margin-top:3mm;"><strong>Insight :</strong> ${esc(qwairyData!.sentiment_insight)}</div>` : ""}`;
+  }
+
   // Mode A/B callout
   const modeCallout = hasQwairy
     ? `<div class="callout" style="margin-top:4mm;"><strong class="text-green">DONN\u00c9ES R\u00c9ELLES QWAIRY</strong> \u2014 Les KPIs ci-dessus proviennent de l\u2019analyse Qwairy sur ${qwairyData!.llms ?? "5"} LLMs et ${qwairyData!.prompts ?? "10"} prompts.</div>`
@@ -728,6 +755,7 @@ function renderGeoPage2(data: UltraAuditData): string {
     ${fanOut}
     ${sourcesSection}
     ${socialTech}
+    ${sentimentBenchmark}
     ${modeCallout}
 
     ${renderPageFooter(ref, 5)}

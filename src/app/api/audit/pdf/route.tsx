@@ -132,6 +132,8 @@ export async function GET(request: NextRequest) {
             llms: qwairyUpload.parsed_data.llms,
             llm_distribution: qwairyUpload.parsed_data.llm_distribution ?? qwairyUpload.parsed_data.per_llm,
             sov_competitors: qwairyUpload.parsed_data.sov_competitors ?? qwairyUpload.parsed_data.competitors,
+            sentiment_benchmark: qwairyUpload.parsed_data.sentiment_benchmark,
+            sentiment_insight: qwairyUpload.parsed_data.sentiment_insight,
           }
         : undefined;
 
