@@ -3,7 +3,8 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
 import { generateActionPlan } from "@/lib/scoring/action-plan";
-import type { SeoData, GeoData, QualityLevel } from "@/types/audit";
+import type { SeoData, GeoData, QualityLevel, AuditTheme } from "@/types/audit";
+import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 
 export const maxDuration = 60;
 
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
 
   // Fetch audit URL + all scored items in parallel
   const [auditRes, itemsRes] = await Promise.all([
-    serviceClient.from("audits").select("url").eq("id", auditId).single(),
+    serviceClient.from("audits").select("url, audit_type, themes").eq("id", auditId).single(),
     serviceClient.from("audit_items").select("*").eq("audit_id", auditId),
   ]);
 
@@ -35,14 +36,58 @@ export async function POST(request: NextRequest) {
 
   const items = itemsRes.data || [];
   const auditUrl = auditRes.data?.url || "";
+  const auditType = auditRes.data?.audit_type || "full";
+  const auditThemes: AuditTheme[] = auditRes.data?.themes || [];
   const coreEeatItems = items.filter((i: any) => i.framework === "core_eeat");
   const citeItems = items.filter((i: any) => i.framework === "cite");
 
-  // Aggregate scores
+  // Aggregate SEO/GEO scores (always present)
   const coreEeatScores = aggregateScores(coreEeatItems);
   const citeScores = aggregateScores(citeItems);
   const scoreSeo = calculateSeoScore(coreEeatScores);
   const scoreGeo = (geoData as any)?.ai_visibility_score ?? 0;
+
+  // Aggregate new theme scores
+  const themeFrameworks = ["perf", "a11y", "rgesn", "tech", "contenu"] as const;
+  const themeScores: Record<string, number | null> = {};
+  const themeData: Record<string, Record<string, unknown>> = {};
+
+  for (const fw of themeFrameworks) {
+    const fwItems = items.filter((i: any) => i.framework === fw);
+    if (fwItems.length === 0) {
+      themeScores[fw] = null;
+      themeData[fw] = {};
+    } else {
+      const dimScores = aggregateScores(fwItems);
+      const avg = Object.values(dimScores);
+      themeScores[fw] = avg.length > 0 ? Math.round(avg.reduce((a, b) => a + b, 0) / avg.length) : null;
+      themeData[fw] = dimScores;
+    }
+  }
+
+  // Compute global score for ultra audits
+  let scoreGlobal: number | null = null;
+  if (auditType === "ultra") {
+    const allScores: Record<AuditTheme, number | null> = {
+      seo: scoreSeo,
+      geo: scoreGeo,
+      perf: themeScores.perf ?? null,
+      a11y: themeScores.a11y ?? null,
+      rgesn: themeScores.rgesn ?? null,
+      tech: themeScores.tech ?? null,
+      contenu: themeScores.contenu ?? null,
+    };
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const [theme, weight] of Object.entries(GLOBAL_SCORE_WEIGHTS)) {
+      const score = allScores[theme as AuditTheme];
+      if (score != null) {
+        weightedSum += score * weight;
+        totalWeight += weight;
+      }
+    }
+    scoreGlobal = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
+  }
 
   const seoProvider = await createSeoProvider();
 
@@ -85,8 +130,19 @@ export async function POST(request: NextRequest) {
         audit_id: auditId,
         score_seo: scoreSeo,
         score_geo: scoreGeo,
+        score_perf: themeScores.perf ?? null,
+        score_a11y: themeScores.a11y ?? null,
+        score_rgesn: themeScores.rgesn ?? null,
+        score_tech: themeScores.tech ?? null,
+        score_contenu: themeScores.contenu ?? null,
+        score_global: scoreGlobal,
         score_core_eeat: coreEeatScores,
         score_cite: citeScores,
+        perf_data: themeData.perf || {},
+        a11y_data: themeData.a11y || {},
+        rgesn_data: themeData.rgesn || {},
+        tech_data: themeData.tech || {},
+        contenu_data: themeData.contenu || {},
         seo_provider: seoProvider.name,
         seo_data: enrichedSeoData,
         geo_provider: process.env.GEO_PROVIDER || "direct_ai",
@@ -174,7 +230,16 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     audit_id: auditId,
     status: "completed",
-    scores: { seo: scoreSeo, geo: scoreGeo },
+    scores: {
+      seo: scoreSeo,
+      geo: scoreGeo,
+      perf: themeScores.perf,
+      a11y: themeScores.a11y,
+      rgesn: themeScores.rgesn,
+      tech: themeScores.tech,
+      contenu: themeScores.contenu,
+      global: scoreGlobal,
+    },
     itemCount: items.length,
     actionCount: allActions.length,
     llmActionsGenerated: llmActions.length,

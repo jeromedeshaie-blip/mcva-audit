@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScoreGauge } from "@/components/audit/score-gauge";
 import type { Audit, AuditScores } from "@/types/audit";
+import { AUDIT_LEVEL_LABELS } from "@/types/audit";
 
 interface AuditWithScores {
   audit: Audit;
@@ -76,36 +77,58 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#FFFFFF] to-white">
+      {/* Quick actions — 3-level audit system */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Pre-Audit */}
+        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#FFFFFF] to-white hover:shadow-md transition-shadow">
           <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#8B2C2C] to-[#A53535]" />
           <CardContent className="pt-6 pl-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3">
               <div>
-                <h3 className="font-heading font-bold text-lg">Audit Express</h3>
+                <h3 className="font-heading font-bold text-lg">Pre-Audit</h3>
+                <p className="text-xs font-medium text-[#8B2C2C] mt-0.5">Score rapide &middot; Gratuit</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  30 criteres — 2-3 minutes
+                  1-2 pages &middot; 1 theme
                 </p>
               </div>
-              <Link href="/audit-express">
-                <Button>Lancer</Button>
+              <Link href="/nouveau-audit?level=pre_audit">
+                <Button className="w-full">Lancer</Button>
               </Link>
             </div>
           </CardContent>
         </Card>
-        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#FFFFFF] to-white">
+        {/* Audit Complet */}
+        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#FFFFFF] to-white hover:shadow-md transition-shadow">
           <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#A53535] to-[#7A2525]" />
           <CardContent className="pt-6 pl-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3">
               <div>
                 <h3 className="font-heading font-bold text-lg">Audit Complet</h3>
+                <p className="text-xs font-medium text-[#A53535] mt-0.5">490-1 490 CHF</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  120 criteres — 30-60 secondes
+                  8-12 pages &middot; 1 theme en profondeur
                 </p>
               </div>
-              <Link href="/audit-complet">
-                <Button variant="outline">Lancer</Button>
+              <Link href="/nouveau-audit?level=full">
+                <Button variant="outline" className="w-full">Lancer</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+        {/* Ultra Audit */}
+        <Card className="group relative overflow-hidden border-transparent bg-gradient-to-br from-[#FFFFFF] to-white hover:shadow-md transition-shadow">
+          <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[#4A1515] to-[#8B2C2C]" />
+          <CardContent className="pt-6 pl-6">
+            <div className="flex flex-col gap-3">
+              <div>
+                <h3 className="font-heading font-bold text-lg">Ultra Audit</h3>
+                <p className="text-xs font-medium text-[#4A1515] mt-0.5">4 900 CHF</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  20-25 pages &middot; 7 themes &middot; Benchmark croise
+                </p>
+              </div>
+              <Link href="/nouveau-audit?level=ultra">
+                <Button variant="outline" className="w-full">Lancer</Button>
               </Link>
             </div>
           </CardContent>
@@ -142,7 +165,7 @@ export default function DashboardPage() {
               </div>
               <p className="text-muted-foreground font-medium">Aucun audit pour le moment.</p>
               <p className="text-sm text-muted-foreground mt-1">Lancez votre premier audit pour commencer.</p>
-              <Link href="/audit-express">
+              <Link href="/nouveau-audit">
                 <Button className="mt-4">Lancer votre premier audit</Button>
               </Link>
             </div>
@@ -160,14 +183,14 @@ export default function DashboardPage() {
                         <span className="font-heading font-semibold group-hover:text-[#8B2C2C] transition-colors">{audit.domain}</span>
                         <Badge
                           variant={
-                            audit.audit_type === "express"
+                            audit.audit_type === "pre_audit" || audit.audit_type === "express"
                               ? "secondary"
+                              : audit.audit_type === "ultra"
+                              ? "destructive"
                               : "default"
                           }
                         >
-                          {audit.audit_type === "express"
-                            ? "Express"
-                            : "Complet"}
+                          {AUDIT_LEVEL_LABELS[audit.audit_type] ?? audit.audit_type}
                         </Badge>
                         <StatusBadge status={audit.status} />
                       </div>

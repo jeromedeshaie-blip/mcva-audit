@@ -4,8 +4,8 @@
     {
       "name": "mcva-audit-dev",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "dev", "-p", "3000", "--dir", "/Users/jeromedeshaie/Projects/mcva-audit"],
-      "port": 3000
+      "runtimeArgs": ["next", "dev", "-p", "3001"],
+      "port": 3001
     }
   ]
 }

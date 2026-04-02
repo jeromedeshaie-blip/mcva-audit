@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
-import { AuditPdfDocument } from "@/lib/pdf/audit-pdf";
-import React from "react";
+import { htmlToPdf } from "@/lib/pdf/html-to-pdf";
+import { renderAuditPdf } from "@/lib/pdf/templates/render";
+import { renderPreAuditPdf } from "@/lib/pdf/templates/render-pre-audit";
+import { renderUltraAuditPdf } from "@/lib/pdf/templates/render-ultra";
+
+export const maxDuration = 60;
 
 /**
  * GET /api/audit/pdf?id=xxx — Generate and download PDF report
+ * Uses Puppeteer + @sparticuz/chromium for HTML→PDF conversion.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -24,7 +28,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "ID audit requis" }, { status: 400 });
     }
 
-    // Fetch audit data
+    // Fetch audit data in parallel
     const [auditRes, scoresRes, itemsRes, actionsRes] = await Promise.all([
       supabase.from("audits").select("*").eq("id", auditId).single(),
       supabase.from("audit_scores").select("*").eq("audit_id", auditId).single(),
@@ -44,11 +48,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Audit non trouvé" }, { status: 404 });
     }
 
-    // Look up benchmark ranking for this domain (if any)
+    // Look up benchmark ranking for this domain (full audits only)
     let benchmarkRanking = undefined;
-    if (auditRes.data.audit_type === "full") {
+    if (auditRes.data.audit_type === "full" || auditRes.data.audit_type === "ultra") {
       const domain = auditRes.data.domain;
-      // Find the latest completed benchmark containing this domain
       const { data: benchmarkDomain } = await supabase
         .from("benchmark_domains")
         .select("benchmark_id, domain, rank_seo, rank_geo, score_seo, score_geo")
@@ -79,16 +82,55 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Generate PDF
-    const pdfBuffer = await renderToBuffer(
-      React.createElement(AuditPdfDocument, {
-        audit: auditRes.data,
-        scores: scoresRes.data,
-        items: itemsRes.data || [],
-        actions: actionsRes.data || [],
+    // Select template based on audit_type
+    const auditType = auditRes.data.audit_type;
+    const audit = auditRes.data;
+    const scores = scoresRes.data;
+    const items = itemsRes.data || [];
+    const actions = actionsRes.data || [];
+
+    let html: string;
+    if (auditType === "pre_audit" || auditType === "express") {
+      html = renderPreAuditPdf({
+        audit,
+        scores,
+        items,
+        actions,
+        theme: audit.theme || (audit.themes?.[0]) || "seo",
+      });
+    } else if (auditType === "ultra") {
+      html = renderUltraAuditPdf({
+        audit,
+        scores,
+        items,
+        actions,
         benchmarkRanking,
-      }) as any
-    );
+        themeScores: {
+          seo: scores.score_seo ?? 0,
+          geo: scores.score_geo ?? 0,
+          perf: scores.score_perf ?? 0,
+          a11y: scores.score_a11y ?? 0,
+          rgesn: scores.score_rgesn ?? 0,
+          tech: scores.score_tech ?? 0,
+          contenu: scores.score_contenu ?? 0,
+        },
+        clientContext: {
+          clientName: audit.brand_name || audit.domain,
+          sector: audit.sector || undefined,
+        },
+      });
+    } else {
+      html = renderAuditPdf({
+        audit,
+        scores,
+        items,
+        actions,
+        benchmarkRanking,
+      });
+    }
+
+    // Convert HTML → PDF via Puppeteer
+    const pdfBuffer = await htmlToPdf(html);
 
     const filename = `audit-${auditRes.data.audit_type}-${auditRes.data.domain}-${new Date().toISOString().split("T")[0]}.pdf`;
 
@@ -101,7 +143,10 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[pdf] Generation failed:", error);
     return NextResponse.json(
-      { error: "Erreur lors de la génération du PDF", detail: error instanceof Error ? error.message : String(error) },
+      {
+        error: "Erreur lors de la génération du PDF",
+        detail: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }

@@ -4,10 +4,11 @@
 
 // --- Enums ---
 
-export type AuditType = "express" | "full";
+export type AuditType = "express" | "full" | "pre_audit" | "ultra";
+export type AuditTheme = "seo" | "geo" | "perf" | "a11y" | "rgesn" | "tech" | "contenu";
 export type AuditStatus = "pending" | "processing" | "completed" | "error";
 export type ItemStatus = "pass" | "partial" | "fail";
-export type Framework = "core_eeat" | "cite";
+export type Framework = "core_eeat" | "cite" | "perf" | "a11y" | "rgesn" | "tech" | "contenu";
 export type Priority = "P1" | "P2" | "P3" | "P4";
 export type UserRole = "analyst" | "bizdev" | "admin";
 export type QualityLevel = "eco" | "standard" | "premium";
@@ -26,6 +27,10 @@ export interface Audit {
   domain: string;
   sector: string | null;
   audit_type: AuditType;
+  theme: AuditTheme | null;
+  themes: AuditTheme[];
+  reference: string | null;
+  brand_name: string | null;
   status: AuditStatus;
   parent_audit_id: string | null;
   created_by: string;
@@ -45,14 +50,81 @@ export interface AuditScores {
   audit_id: string;
   score_seo: number;
   score_geo: number;
+  score_perf: number | null;
+  score_a11y: number | null;
+  score_rgesn: number | null;
+  score_tech: number | null;
+  score_contenu: number | null;
+  score_global: number | null;
   score_core_eeat: CoreEeatScores;
   score_cite: CiteScores;
   seo_provider: "free" | "semrush";
   seo_data: SeoData;
   geo_provider: "direct_ai" | "qwairy";
   geo_data: GeoData;
+  perf_data: Record<string, unknown>;
+  a11y_data: Record<string, unknown>;
+  rgesn_data: Record<string, unknown>;
+  tech_data: Record<string, unknown>;
+  contenu_data: Record<string, unknown>;
   competitors: CompetitorData[] | null;
 }
+
+// --- Audit Uploads (Semrush/Qwairy CSV) ---
+
+export interface AuditUpload {
+  id: string;
+  audit_id: string;
+  source: "semrush" | "qwairy" | "pagespeed";
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  parsed_data: Record<string, unknown>;
+  status: "pending" | "parsing" | "parsed" | "error";
+  error_message: string | null;
+  uploaded_by: string;
+  created_at: string;
+}
+
+// --- Theme metadata ---
+
+export const THEME_LABELS: Record<AuditTheme, string> = {
+  seo: "SEO",
+  geo: "GEO / Score GEO™",
+  perf: "Performance",
+  a11y: "Accessibilité",
+  rgesn: "Éco-conception (RGESN)",
+  tech: "Technique",
+  contenu: "Contenu",
+};
+
+export const AUDIT_LEVEL_LABELS: Record<AuditType, string> = {
+  pre_audit: "Pré-Audit",
+  express: "Pré-Audit",
+  full: "Audit Complet",
+  ultra: "Ultra Audit",
+};
+
+export const THEME_PRICES: Record<AuditTheme, number> = {
+  seo: 990,
+  geo: 1490,
+  perf: 490,
+  a11y: 1490,
+  rgesn: 990,
+  tech: 490,
+  contenu: 490,
+};
+
+/** Ultra Audit global score weights per theme */
+export const GLOBAL_SCORE_WEIGHTS: Record<AuditTheme, number> = {
+  seo: 0.20,
+  geo: 0.25,
+  perf: 0.12,
+  a11y: 0.12,
+  rgesn: 0.08,
+  tech: 0.08,
+  contenu: 0.15,
+};
 
 // --- SEO Data (provider-agnostic) ---
 
