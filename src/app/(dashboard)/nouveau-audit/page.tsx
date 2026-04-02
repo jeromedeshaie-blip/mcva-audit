@@ -113,7 +113,8 @@ async function fetchStep(
 
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.error || data.detail || `Erreur ${res.status} a l\u2019etape "${label}"`);
+      const msg = data.detail ? `${data.error}: ${data.detail}` : (data.error || `Erreur ${res.status}`);
+      throw new Error(`${msg} (etape "${label}")`);
     }
     return data;
   }
@@ -321,7 +322,7 @@ export default function NouveauAuditPage() {
         }
       }
 
-      // Score new themes (perf, a11y, rgesn, tech, contenu)
+      // Score new themes (perf, a11y, rgesn, tech, contenu) — resilient: continue on failure
       for (let tIdx = 0; tIdx < newThemes.length; tIdx++) {
         if (abortRef.current) return;
         const theme = newThemes[tIdx];
@@ -332,17 +333,26 @@ export default function NouveauAuditPage() {
         );
         setGlobalProgress(40 + Math.round(((tIdx + 1) / newThemes.length) * 25));
 
-        await fetchStep("/api/audit-direct/score-theme", {
-          auditId: id,
-          theme,
-          quality,
-        }, `Theme ${theme}`);
+        try {
+          await fetchStep("/api/audit-direct/score-theme", {
+            auditId: id,
+            theme,
+            quality,
+          }, `Theme ${theme}`);
 
-        setThemeProgress((prev) =>
-          prev.map((tp) =>
-            tp.theme === theme ? { ...tp, status: "done" } : tp,
-          ),
-        );
+          setThemeProgress((prev) =>
+            prev.map((tp) =>
+              tp.theme === theme ? { ...tp, status: "done" } : tp,
+            ),
+          );
+        } catch (themeErr) {
+          console.warn(`[audit] Theme ${theme} failed, continuing:`, themeErr);
+          setThemeProgress((prev) =>
+            prev.map((tp) =>
+              tp.theme === theme ? { ...tp, status: "error" } : tp,
+            ),
+          );
+        }
       }
 
       if (abortRef.current) return;

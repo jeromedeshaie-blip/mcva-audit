@@ -263,7 +263,7 @@ Règles de scoring :
     .filter((r) => r.code && itemMap.has(r.code))
     .map((r) => {
       const def = itemMap.get(r.code!)!;
-      const score = Math.min(100, Math.max(0, Number(r.score) || 50));
+      const score = Math.round(Math.min(100, Math.max(0, Number(r.score) || 50)));
       return {
         framework,
         dimension,

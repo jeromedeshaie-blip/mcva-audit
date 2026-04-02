@@ -90,7 +90,18 @@ export async function POST(request: NextRequest) {
 
     const { error: insertErr } = await serviceClient
       .from("audit_items")
-      .insert(items.map((item) => ({ audit_id: auditId, ...item })));
+      .insert(items.map((item) => ({
+        audit_id: auditId,
+        framework: item.framework,
+        dimension: item.dimension,
+        item_code: item.item_code,
+        item_label: item.item_label,
+        status: item.status,
+        score: Math.round(Number(item.score) || 50),
+        notes: item.notes ?? null,
+        is_geo_first: item.is_geo_first ?? false,
+        is_express_item: item.is_express_item ?? false,
+      })));
 
     if (insertErr) {
       return NextResponse.json({
