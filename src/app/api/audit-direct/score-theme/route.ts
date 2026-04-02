@@ -98,15 +98,16 @@ export async function POST(request: NextRequest) {
         item_label: item.item_label,
         status: item.status,
         score: Math.round(Number(item.score) || 50),
-        notes: item.notes ?? null,
+        notes: typeof item.notes === "string" ? item.notes : item.notes ? String(item.notes) : null,
         is_geo_first: item.is_geo_first ?? false,
         is_express_item: item.is_express_item ?? false,
       })));
 
     if (insertErr) {
+      console.error(`[score-theme][${theme}] Insert failed:`, insertErr.message, insertErr.code, insertErr.details);
       return NextResponse.json({
         error: "Erreur sauvegarde items",
-        detail: insertErr.message,
+        detail: `${insertErr.message} (code: ${insertErr.code})`,
         itemCount: items.length,
         failed,
       }, { status: 500 });

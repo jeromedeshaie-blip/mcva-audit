@@ -14,8 +14,18 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
   const body = await request.json();
-  const { url, sector = "général", quality = "standard" } = body;
+  const { url, sector = "général", quality = "standard", level = "full", themes = [] } = body;
   if (!url) return NextResponse.json({ error: "URL requise" }, { status: 400 });
+
+  // Map front-end level to DB audit_type
+  const auditTypeMap: Record<string, string> = {
+    pre_audit: "pre_audit",
+    express: "express",
+    complet: "full",
+    full: "full",
+    ultra: "ultra",
+  };
+  const auditType = auditTypeMap[level] || "full";
 
   const fullUrl = url.startsWith("http") ? url : `https://${url}`;
   const domain = (() => {
@@ -31,9 +41,11 @@ export async function POST(request: NextRequest) {
       url: fullUrl,
       domain,
       sector: sector || null,
-      audit_type: "full",
+      audit_type: auditType,
       status: "processing",
       created_by: user.id,
+      theme: auditType !== "ultra" && themes.length === 1 ? themes[0] : null,
+      themes: themes.length > 0 ? themes : null,
     })
     .select()
     .single();

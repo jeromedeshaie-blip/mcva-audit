@@ -271,7 +271,7 @@ Règles de scoring :
         item_label: def.label,
         status: validateStatus(r.status),
         score,
-        notes: r.notes || null,
+        notes: typeof r.notes === "string" ? r.notes : r.notes ? String(r.notes) : null,
         is_geo_first: false,
         is_express_item: false,
       };
