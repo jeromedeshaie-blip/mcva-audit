@@ -119,13 +119,21 @@ function detectSpa(html: string): boolean {
   // If Wix detected, always flag
   if (hasWixMarker) return true;
 
-  // If text content is less than 5% of total HTML, it's likely a SPA shell
-  if (htmlLength > 10000 && textLength / htmlLength < 0.05) return true;
-
-  // If very few <p> tags and lots of <script> tags
+  // Count structural HTML elements — SSR sites have real content tags
   const pCount = (html.match(/<p[\s>]/gi) || []).length;
+  const hCount = (html.match(/<h[1-6][\s>]/gi) || []).length;
+  const imgCount = (html.match(/<img[\s>]/gi) || []).length;
   const scriptCount = (html.match(/<script[\s>]/gi) || []).length;
-  if (scriptCount > 20 && pCount < 3) return true;
+
+  // If the page has meaningful structural content, it's NOT a SPA shell
+  // even if JS/CSS inflate the total HTML size
+  const hasStructuralContent = pCount >= 3 || hCount >= 2 || (pCount >= 1 && imgCount >= 2);
+
+  // Only flag as SPA if very little text AND no structural content
+  if (htmlLength > 10000 && textLength / htmlLength < 0.02 && !hasStructuralContent) return true;
+
+  // If almost no content tags but lots of scripts → SPA shell
+  if (scriptCount > 20 && pCount < 2 && hCount < 2 && textLength < 500) return true;
 
   return false;
 }
