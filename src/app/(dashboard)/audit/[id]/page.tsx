@@ -134,7 +134,7 @@ export default function AuditDetailPage() {
                   variant="outline"
                   className="bg-white/10 border-white/20 text-white hover:bg-white/20"
                   onClick={() =>
-                    window.open(`/api/audit/pdf?id=${auditId}`, "_blank")
+                    window.open(`/api/audit/pdf?id=${auditId}&format=html`, "_blank")
                   }
                 >
                   <svg

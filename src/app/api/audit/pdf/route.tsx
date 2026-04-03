@@ -169,17 +169,41 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Convert HTML → PDF via Puppeteer
-    const pdfBuffer = await htmlToPdf(html);
+    const format = request.nextUrl.searchParams.get("format");
 
-    const filename = `audit-${auditRes.data.audit_type}-${auditRes.data.domain}-${new Date().toISOString().split("T")[0]}.pdf`;
+    // Mode HTML: return printable HTML page (browser print → PDF)
+    if (format === "html") {
+      const printHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Audit PDF</title>
+<script>window.onload=function(){window.print();}</script>
+</head><body>${html}</body></html>`;
+      return new NextResponse(printHtml, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
 
-    return new NextResponse(new Uint8Array(pdfBuffer), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+    // Mode PDF: convert HTML → PDF via Puppeteer
+    try {
+      const pdfBuffer = await htmlToPdf(html);
+      const filename = `audit-${auditRes.data.audit_type}-${auditRes.data.domain}-${new Date().toISOString().split("T")[0]}.pdf`;
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    } catch (pdfErr) {
+      console.error("[pdf] Puppeteer failed, returning HTML fallback:", pdfErr);
+      // Fallback: return printable HTML
+      const printHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Audit PDF</title>
+<style>body{margin:0}@media print{body{margin:0}}</style>
+<script>window.onload=function(){window.print();}</script>
+</head><body>${html}</body></html>`;
+      return new NextResponse(printHtml, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
   } catch (error) {
     console.error("[pdf] Generation failed:", error);
     return NextResponse.json(
