@@ -1,10 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Optimize for Vercel deployment
-  serverExternalPackages: ["@sparticuz/chromium-min", "puppeteer-core"],
-  experimental: {
-    // Enable server actions if needed later
+  // Externalize Chromium + Puppeteer so their binaries survive bundling
+  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
+  experimental: {},
+
+  // Force include Chromium brotli binaries in the serverless function
+  outputFileTracingIncludes: {
+    "/api/audit/pdf": [
+      "./node_modules/@sparticuz/chromium/bin/**",
+    ],
   },
 
   // Allow external images if needed

@@ -1,16 +1,9 @@
-import chromium from "@sparticuz/chromium-min";
+import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 
 /**
- * Remote Chromium binary URL — must match the @sparticuz/chromium-min version.
- * See https://github.com/nicholasgasior/chromium-brotli/releases
- */
-const CHROMIUM_REMOTE_URL =
-  "https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar";
-
-/**
- * Convert an HTML string to a PDF buffer using Puppeteer + @sparticuz/chromium-min.
- * Uses a remote Chromium binary on Vercel serverless to avoid binary packaging issues.
+ * Convert an HTML string to a PDF buffer using Puppeteer + @sparticuz/chromium.
+ * Works on Vercel serverless (AWS Lambda compatible Chromium binary).
  */
 export async function htmlToPdf(html: string): Promise<Buffer> {
   const isLocal = process.env.NODE_ENV === "development";
@@ -19,7 +12,7 @@ export async function htmlToPdf(html: string): Promise<Buffer> {
     ? process.platform === "darwin"
       ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
       : "/usr/bin/google-chrome"
-    : await chromium.executablePath(CHROMIUM_REMOTE_URL);
+    : await chromium.executablePath();
 
   const browser = await puppeteer.launch({
     args: isLocal ? [] : chromium.args,
@@ -36,7 +29,6 @@ export async function htmlToPdf(html: string): Promise<Buffer> {
       format: "A4",
       printBackground: true,
       margin: { top: "0", right: "0", bottom: "0", left: "0" },
-      // Let the HTML template control all margins and page breaks
     });
 
     return Buffer.from(pdf);
