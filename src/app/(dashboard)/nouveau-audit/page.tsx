@@ -327,6 +327,8 @@ export default function NouveauAuditPage() {
       }
 
       // Score new themes (perf, a11y, rgesn, tech, contenu) — resilient: continue on failure
+      // Ultra: score dimension-by-dimension to stay within 60s per API call
+      // Non-ultra: score all dimensions of a theme in one call (faster, fits in 60s)
       for (let tIdx = 0; tIdx < newThemes.length; tIdx++) {
         if (abortRef.current) return;
         const theme = newThemes[tIdx];
@@ -338,11 +340,33 @@ export default function NouveauAuditPage() {
         setGlobalProgress(40 + Math.round(((tIdx + 1) / newThemes.length) * 25));
 
         try {
-          await fetchStep("/api/audit-direct/score-theme", {
-            auditId: id,
-            theme,
-            quality: effectiveQuality,
-          }, `Theme ${theme}`);
+          if (effectiveQuality === "ultra") {
+            // Ultra: get dimensions list then score one-by-one
+            const dimRes = await fetchStep("/api/audit-direct/score-theme", {
+              auditId: id,
+              theme,
+              quality: effectiveQuality,
+              listDimensions: true,
+            }, `${theme} dims`);
+
+            const dims: string[] = dimRes.dimensions || [];
+            for (const dim of dims) {
+              if (abortRef.current) return;
+              await fetchStep("/api/audit-direct/score-theme", {
+                auditId: id,
+                theme,
+                dimension: dim,
+                quality: effectiveQuality,
+              }, `${theme}/${dim}`);
+            }
+          } else {
+            // Non-ultra: score all dimensions in one call
+            await fetchStep("/api/audit-direct/score-theme", {
+              auditId: id,
+              theme,
+              quality: effectiveQuality,
+            }, `Theme ${theme}`);
+          }
 
           setThemeProgress((prev) =>
             prev.map((tp) =>

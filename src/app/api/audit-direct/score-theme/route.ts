@@ -36,6 +36,12 @@ export async function POST(request: NextRequest) {
   const mode = rawMode === "express" ? "express" : "full";
   const serviceClient = createServiceClient();
 
+  // If only dimensions list requested (for frontend-driven per-dimension flow)
+  if (body.listDimensions) {
+    const dims = getThemeDimensions(theme, mode as "express" | "full");
+    return NextResponse.json({ theme, dimensions: dims });
+  }
+
   // Fetch stored HTML
   const { data: audit, error: fetchErr } = await serviceClient
     .from("audits")
@@ -53,13 +59,18 @@ export async function POST(request: NextRequest) {
   // Determine scoring mode from audit_type
   const effectiveMode = audit.audit_type === "pre_audit" ? "express" : mode;
 
-  // Get all dimensions for this theme
-  const dimensions = getThemeDimensions(theme, effectiveMode as "express" | "full");
+  // Optional: score a single dimension (for ultra per-dimension flow)
+  const singleDim = body.dimension as string | undefined;
+
+  // Get dimensions to score
+  const dimensions = singleDim
+    ? [singleDim]
+    : getThemeDimensions(theme, effectiveMode as "express" | "full");
   if (dimensions.length === 0) {
     return NextResponse.json({ theme, dimensions: [], itemCount: 0 });
   }
 
-  // Score all dimensions in parallel
+  // Score dimensions — sequentially for single dim, parallel for batch (non-ultra)
   const results = await Promise.allSettled(
     dimensions.map((dim) =>
       scoreThemeDimension(theme, dim, html, url, effectiveMode as "express" | "full", quality)
@@ -80,13 +91,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Save items (delete existing for this theme first for idempotency)
+  // Save items (delete existing for idempotency — scope to dimension if single)
   if (items.length > 0) {
-    await serviceClient
+    let deleteQuery = serviceClient
       .from("audit_items")
       .delete()
       .eq("audit_id", auditId)
       .eq("framework", theme);
+    if (singleDim) {
+      deleteQuery = deleteQuery.eq("dimension", singleDim);
+    }
+    await deleteQuery;
 
     const { error: insertErr } = await serviceClient
       .from("audit_items")
