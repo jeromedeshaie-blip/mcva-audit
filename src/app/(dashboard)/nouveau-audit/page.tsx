@@ -216,57 +216,9 @@ export default function NouveauAuditPage() {
 
       if (abortRef.current) return;
 
-      // --- ULTRA: delegate to Inngest + poll for completion ---
-      if (level === "ultra") {
-        // The init endpoint already fired the Inngest event.
-        // Poll audit status every 5s until completed or error.
-        setThemeProgress((prev) => prev.map((tp) => ({ ...tp, status: "in-progress" })));
-        setGlobalProgress(15);
-
-        const POLL_INTERVAL = 5000;
-        const MAX_POLL_TIME = 20 * 60 * 1000; // 20 min
-        const startTime = Date.now();
-
-        while (Date.now() - startTime < MAX_POLL_TIME) {
-          if (abortRef.current) return;
-
-          await new Promise((r) => setTimeout(r, POLL_INTERVAL));
-
-          try {
-            const res = await fetch(`/api/audit?id=${id}`);
-            if (!res.ok) continue;
-            const data = await res.json();
-            const status = data.audit?.status;
-
-            // Animate progress based on elapsed time (estimate)
-            const elapsed = Date.now() - startTime;
-            const estimatedProgress = Math.min(90, 15 + Math.round((elapsed / MAX_POLL_TIME) * 75));
-            setGlobalProgress(estimatedProgress);
-
-            if (status === "completed") {
-              setThemeProgress((prev) => prev.map((tp) => ({ ...tp, status: "done" })));
-              setGlobalProgress(100);
-              setPageStep("redirect");
-              router.push(`/audit/${id}`);
-              return;
-            }
-
-            if (status === "error") {
-              throw new Error("L'audit ultra a echoue cote serveur. Veuillez reessayer.");
-            }
-          } catch (pollErr) {
-            if (pollErr instanceof Error && pollErr.message.includes("echoue cote serveur")) {
-              throw pollErr;
-            }
-            // Network error — keep polling
-            console.warn("[audit] Poll error, retrying:", pollErr);
-          }
-        }
-
-        throw new Error("Timeout : l'audit ultra n'a pas termine dans le delai imparti (20 min).");
-      }
-
-      // --- NON-ULTRA: existing step-by-step flow ---
+      // --- Ultra uses the same step-by-step flow as complet, with quality="ultra" ---
+      // (Inngest is not used — Vercel Hobby has a 10s function limit which breaks LLM steps)
+      const effectiveQuality = level === "ultra" ? "ultra" : quality;
 
       // --- Upload CSV files if present ---
       if (semrushFile || qwairyFile) {
@@ -328,7 +280,7 @@ export default function NouveauAuditPage() {
             auditId: id,
             dimensions: batch.dimensions,
             framework: "core_eeat",
-            quality,
+            quality: effectiveQuality,
           }, batch.label);
         }
 
@@ -362,7 +314,7 @@ export default function NouveauAuditPage() {
               auditId: id,
               dimensions: batch.dimensions,
               framework: "cite",
-              quality,
+              quality: effectiveQuality,
             }, batch.label);
           }
 
@@ -389,7 +341,7 @@ export default function NouveauAuditPage() {
           await fetchStep("/api/audit-direct/score-theme", {
             auditId: id,
             theme,
-            quality,
+            quality: effectiveQuality,
           }, `Theme ${theme}`);
 
           setThemeProgress((prev) =>
@@ -411,7 +363,7 @@ export default function NouveauAuditPage() {
 
       // --- Data collection ---
       setGlobalProgress(70);
-      const dataRes = await fetchStep("/api/audit-direct/data", { auditId: id, quality }, "Data SEO/GEO");
+      const dataRes = await fetchStep("/api/audit-direct/data", { auditId: id, quality: effectiveQuality }, "Data SEO/GEO");
 
       if (abortRef.current) return;
 
@@ -423,7 +375,7 @@ export default function NouveauAuditPage() {
         geoData: dataRes.geoData,
         competitors: dataRes.competitors,
         siteAuditData: dataRes.siteAuditData,
-        quality,
+        quality: effectiveQuality,
       }, "Finalize");
 
       // Mark all themes done

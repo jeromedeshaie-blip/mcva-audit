@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { inngest } from "@/lib/inngest/client";
 import * as cheerio from "cheerio";
 
 export const maxDuration = 60;
@@ -86,28 +85,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Erreur stockage HTML", detail: updateErr.message }, { status: 500 });
   }
 
-  // For ultra audits, fire Inngest event to run the full pipeline asynchronously
-  if (auditType === "ultra") {
-    try {
-      await inngest.send({
-        name: "audit/ultra.requested",
-        data: {
-          auditId: audit.id,
-          url: fullUrl,
-          domain,
-          sector: sector || "général",
-          quality: "ultra",
-        },
-      });
-    } catch (inngestError) {
-      console.error(`[audit:${audit.id}] Inngest ultra send failed:`, inngestError);
-      await serviceClient.from("audits").update({ status: "error" }).eq("id", audit.id);
-      return NextResponse.json(
-        { error: "Erreur lancement audit ultra", detail: "Service d'orchestration indisponible" },
-        { status: 503 }
-      );
-    }
-  }
+  // Ultra audits now use the same step-by-step frontend flow as complet
+  // (Inngest is not used — Vercel Hobby has a 10s function limit which breaks LLM steps)
 
   return NextResponse.json({
     auditId: audit.id,
@@ -116,7 +95,6 @@ export async function POST(request: NextRequest) {
     htmlLength: html.length,
     url: fullUrl,
     spaDetected,
-    isUltra: auditType === "ultra",
   });
 }
 
