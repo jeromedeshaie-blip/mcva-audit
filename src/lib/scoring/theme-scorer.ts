@@ -114,30 +114,37 @@ export async function scoreTheme(
   const truncatedHtml = html.slice(0, config.htmlMaxChars);
   const notesDepth = config.notesDepth ?? "concise";
 
-  const results = await Promise.allSettled(
-    Array.from(byDimension.entries()).map(([dimension, dimItems]) =>
-      scoreDimensionItems(
-        theme,
-        dimension,
-        dimItems,
-        truncatedHtml,
-        url,
-        config.scoringModel,
-        config.maxTokensScoring,
-        notesDepth
-      )
-    )
-  );
-
+  // Score dimensions in batches of 3 to avoid overwhelming the API
+  // (ultra + A11y = 12 dimensions; all 12 in parallel would timeout in 60s)
+  const BATCH_SIZE = 3;
+  const dimensionEntries = Array.from(byDimension.entries());
   const allItems: Omit<AuditItem, "id" | "audit_id">[] = [];
   let failed = 0;
 
-  for (const result of results) {
-    if (result.status === "fulfilled") {
-      allItems.push(...result.value);
-    } else {
-      failed++;
-      console.error(`[theme-scorer][${theme}] Dimension failed:`, result.reason?.message);
+  for (let i = 0; i < dimensionEntries.length; i += BATCH_SIZE) {
+    const batch = dimensionEntries.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(([dimension, dimItems]) =>
+        scoreDimensionItems(
+          theme,
+          dimension,
+          dimItems,
+          truncatedHtml,
+          url,
+          config.scoringModel,
+          config.maxTokensScoring,
+          notesDepth
+        )
+      )
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        allItems.push(...result.value);
+      } else {
+        failed++;
+        console.error(`[theme-scorer][${theme}] Dimension failed:`, result.reason?.message);
+      }
     }
   }
 

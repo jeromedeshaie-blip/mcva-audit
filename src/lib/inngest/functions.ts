@@ -4,7 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { createGeoProvider } from "@/lib/providers/geo/geo-provider";
 import { scoreItems, scoreCiteItems, aggregateScores, calculateSeoScore, scoreOneDimension, scoreOneCiteDimension, getCoreEeatDimensions, getCiteDimensions } from "@/lib/scoring/scorer";
-import { scoreTheme, getThemeDimensions } from "@/lib/scoring/theme-scorer";
+import { scoreTheme, scoreThemeDimension, getThemeDimensions } from "@/lib/scoring/theme-scorer";
 import { QUALITY_CONFIG } from "@/lib/constants";
 import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 import type { AuditTheme, QualityLevel, GeoData, SeoData } from "@/types/audit";
@@ -1119,32 +1119,29 @@ export const runUltraAudit = inngest.createFunction(
       citeAllItems.push(...dimItems);
     }
 
-    // ─── Step 6: Score 5 theme dimensions — 1 step per theme ───
+    // ─── Step 6: Score 5 themes — 1 step per DIMENSION (not per theme) ───
+    // Each step = 1 dimension = 1-5 items = 1 LLM call → fits in 60s
     const ultraThemes = ["perf", "a11y", "rgesn", "tech", "contenu"] as const;
-    const themeResults: Record<string, { items: any[]; score: number }> = {};
+    const themeAllItems: Array<any> = [];
 
     for (const theme of ultraThemes) {
-      const result = await step.run(`score-theme-${theme}`, async () => {
-        console.log(`[audit:${auditId}] Scoring theme ${theme}...`);
-        try {
-          const items = await scoreTheme(theme, html, url, "full", quality);
-          const scores = items.map((i) => i.score);
-          const avg = avgScore(scores);
-          console.log(`[audit:${auditId}] Theme ${theme}: ${items.length} items, avg=${avg}`);
-          return { items, score: avg };
-        } catch (e: any) {
-          console.error(`[audit:${auditId}] Theme ${theme} failed:`, e.message);
-          return { items: [], score: 0 };
-        }
-      });
-      themeResults[theme] = result;
+      const dims = getThemeDimensions(theme, "full");
+      for (const dim of dims) {
+        const dimItems = await step.run(`score-${theme}-${dim}`, async () => {
+          console.log(`[audit:${auditId}] Scoring ${theme}/${dim}...`);
+          try {
+            return await scoreThemeDimension(theme, dim, html, url, "full", quality);
+          } catch (e: any) {
+            console.error(`[audit:${auditId}] ${theme}/${dim} failed:`, e.message);
+            return [];
+          }
+        });
+        themeAllItems.push(...dimItems);
+      }
     }
 
     // ─── Step 7: Generate action plan ───
-    const allScoredItems = [...coreEeatAllItems, ...citeAllItems];
-    for (const theme of ultraThemes) {
-      allScoredItems.push(...themeResults[theme].items);
-    }
+    const allScoredItems = [...coreEeatAllItems, ...citeAllItems, ...themeAllItems];
 
     const actions = await step.run("generate-action-plan", async () => {
       if (allScoredItems.length === 0) {
@@ -1173,12 +1170,17 @@ export const runUltraAudit = inngest.createFunction(
       const scoreSeo = calculateSeoScore(coreEeatScores);
       const scoreGeo = (collectedData.geoData as any).ai_visibility_score ?? 0;
 
-      // Theme scores
-      const scorePerf = themeResults.perf.score;
-      const scoreA11y = themeResults.a11y.score;
-      const scoreRgesn = themeResults.rgesn.score;
-      const scoreTech = themeResults.tech.score;
-      const scoreContenu = themeResults.contenu.score;
+      // Theme scores — compute from themeAllItems
+      function themeAvg(fw: string): number {
+        const items = themeAllItems.filter((i: any) => i.framework === fw);
+        if (items.length === 0) return 0;
+        return Math.round(items.reduce((s: number, i: any) => s + (i.score || 0), 0) / items.length);
+      }
+      const scorePerf = themeAvg("perf");
+      const scoreA11y = themeAvg("a11y");
+      const scoreRgesn = themeAvg("rgesn");
+      const scoreTech = themeAvg("tech");
+      const scoreContenu = themeAvg("contenu");
 
       // Weighted global score
       const themeScoresMap: Partial<Record<AuditTheme, number>> = {
