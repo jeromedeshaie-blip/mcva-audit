@@ -98,9 +98,10 @@ export async function scoreItems(
 
   // Score each dimension in parallel
   const config = QUALITY_CONFIG[quality];
+  const notesDepth = config.notesDepth ?? "concise";
   const dimensionResults = await Promise.allSettled(
     Array.from(byDimension.entries()).map(([dimension, dimensionItems]) =>
-      scoreDimension(html, url, dimension as CoreEeatDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring)
+      scoreDimension(html, url, dimension as CoreEeatDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring, notesDepth)
     )
   );
 
@@ -138,7 +139,8 @@ export async function scoreOneDimension(
   if (dimensionItems.length === 0) return [];
 
   const config = QUALITY_CONFIG[quality];
-  return scoreDimension(html, url, dimension as CoreEeatDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring);
+  const notesDepth = config.notesDepth ?? "concise";
+  return scoreDimension(html, url, dimension as CoreEeatDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring, notesDepth);
 }
 
 /**
@@ -156,7 +158,8 @@ export async function scoreOneCiteDimension(
   if (dimensionItems.length === 0) return [];
 
   const config = QUALITY_CONFIG[quality];
-  return scoreCiteDimension(html, url, dimension as CiteDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring);
+  const notesDepth = config.notesDepth ?? "concise";
+  return scoreCiteDimension(html, url, dimension as CiteDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring, notesDepth);
 }
 
 /**
@@ -179,7 +182,8 @@ async function scoreDimension(
   items: CoreEeatItemDef[],
   model: string = "claude-sonnet-4-6",
   htmlMaxChars: number = 50000,
-  maxTokens: number = 2000
+  maxTokens: number = 2000,
+  notesDepth: "concise" | "detailed" = "concise"
 ): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
   const truncatedHtml = html.slice(0, htmlMaxChars);
 
@@ -189,6 +193,10 @@ async function scoreDimension(
         `- ${item.code}: ${item.label} — ${item.description}`
     )
     .join("\n");
+
+  const notesInstruction = notesDepth === "detailed"
+    ? `"notes": "Analyse détaillée en 3-5 phrases : (1) constat factuel observé dans le HTML, (2) impact sur le référencement/visibilité IA, (3) recommandation concrète avec exemple de code/config si applicable"`
+    : `"notes": "Explication concise en français (1-2 phrases)"`;
 
   const prompt = `Tu es un auditeur SEO/GEO expert. Analyse cette page web et évalue chaque critère ci-dessous.
 
@@ -208,7 +216,7 @@ Pour CHAQUE critère, réponds en JSON avec un tableau d'objets:
     "code": "C01",
     "status": "pass" | "partial" | "fail",
     "score": 0-100,
-    "notes": "Explication concise en français (1-2 phrases)"
+    ${notesInstruction}
   }
 ]
 
@@ -319,9 +327,10 @@ export async function scoreCiteItems(
   }
 
   const config = QUALITY_CONFIG[quality];
+  const notesDepth = config.notesDepth ?? "concise";
   const dimensionResults = await Promise.allSettled(
     Array.from(byDimension.entries()).map(([dimension, dimensionItems]) =>
-      scoreCiteDimension(html, url, dimension as CiteDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring)
+      scoreCiteDimension(html, url, dimension as CiteDimension, dimensionItems, config.scoringModel, config.htmlMaxChars, config.maxTokensScoring, notesDepth)
     )
   );
 
@@ -351,7 +360,8 @@ async function scoreCiteDimension(
   items: CiteItemDef[],
   model: string = "claude-sonnet-4-6",
   htmlMaxChars: number = 50000,
-  maxTokens: number = 2000
+  maxTokens: number = 2000,
+  notesDepth: "concise" | "detailed" = "concise"
 ): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
   const truncatedHtml = html.slice(0, htmlMaxChars);
 
@@ -365,6 +375,10 @@ async function scoreCiteDimension(
   const itemsList = items
     .map((item) => `- ${item.code}: ${item.label} — ${item.description}`)
     .join("\n");
+
+  const notesInstruction = notesDepth === "detailed"
+    ? `"notes": "Analyse détaillée en 3-5 phrases : (1) constat factuel observé dans le HTML, (2) impact sur le référencement/visibilité IA, (3) recommandation concrète avec exemple de code/config si applicable"`
+    : `"notes": "Explication concise en français (1-2 phrases)"`;
 
   const prompt = `Tu es un auditeur spécialisé en crédibilité et autorité de domaine. Analyse cette page web et évalue chaque critère CITE ci-dessous.
 
@@ -384,7 +398,7 @@ Pour CHAQUE critère, réponds en JSON avec un tableau d'objets:
     "code": "CI-C01",
     "status": "pass" | "partial" | "fail",
     "score": 0-100,
-    "notes": "Explication concise en français (1-2 phrases)"
+    ${notesInstruction}
   }
 ]
 

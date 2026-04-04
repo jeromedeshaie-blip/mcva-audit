@@ -1,21 +1,18 @@
 /**
- * MCVA Brand Library v3.0 — PDF Design System
+ * MCVA Brand Library v3.2 — PDF Design System
  * Shared CSS for all audit PDF templates (Pre-Audit, Complet, Ultra).
  *
- * Typography: Poppins (Google Fonts loaded inline)
- * Colors: MCVA v3.0 — red #8B2C2C, no coral/orange
+ * Typography: DM Sans (body), General Sans (headings), DM Mono (code/refs)
+ * Colors: MCVA v3.2 — multi-gradient red spectrum
  */
 
 export const PDF_STYLES = `
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
-
 :root {
   --red: #8B2C2C;
-  --dark-red: #6B1F1F;
-  --gradient-start: #2A0E0E;
-  --gradient-end: #8B2C2C;
+  --dark-red: #5C1A1A;
+  --deep-red: #2A0E0E;
+  --flare-red: #B04040;
   --black: #0E0E0E;
-  --beige: #C9A98E;
   --cream: #F0E8E4;
   --white: #FFFFFF;
   --gray-50: #FAFAFA;
@@ -28,16 +25,30 @@ export const PDF_STYLES = `
   --orange: #B8860B;
   --crit-red: #CC2200;
   --info-blue: #0066AA;
+  --beige: #C9A98E;
+  --grad-abyss: linear-gradient(165deg, #0E0E0E 0%, #2A0E0E 50%, #5C1A1A 100%);
+  --grad-ember: linear-gradient(135deg, #2A0E0E 0%, #5C1A1A 100%);
+  --grad-drift: linear-gradient(135deg, #5C1A1A 0%, #8B2C2C 100%);
+  --grad-flare: linear-gradient(135deg, #8B2C2C 0%, #B04040 100%);
+  --grad-accent: linear-gradient(90deg, #8B2C2C 0%, #B04040 100%);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: 'Poppins', sans-serif;
+  font-family: 'DM Sans', 'Helvetica Neue', sans-serif;
   font-size: 9.5pt;
   line-height: 1.55;
   color: var(--black);
   background: var(--white);
+}
+
+h1, h2, .section-title, .cover-title {
+  font-family: 'General Sans', 'Helvetica Neue', sans-serif;
+}
+
+.text-mono, code, .cover-ref, .finding-tag {
+  font-family: 'DM Mono', 'Courier New', monospace;
 }
 
 /* ─── PAGE LAYOUT ─── */
@@ -61,7 +72,7 @@ body {
 /* ─── COVER ─── */
 .cover {
   height: 100%;
-  background: linear-gradient(165deg, #0E0E0E 0%, #2A0E0E 40%, #6B1F1F 100%);
+  background: var(--grad-abyss);
   padding: 0 22mm;
   display: flex;
   flex-direction: column;
@@ -88,7 +99,7 @@ body {
 
 /* ─── SECTION HEADER (dark banner) ─── */
 .section-header {
-  background: linear-gradient(135deg, #0E0E0E 0%, #2A0E0E 100%);
+  background: var(--grad-ember);
   padding: 16mm 22mm 12mm 22mm;
   margin: -18mm -22mm 20mm -22mm;
   position: relative;
@@ -129,7 +140,7 @@ h3 { font-size: 10pt; font-weight: 600; color: var(--gray-800); margin: 12px 0 6
   margin: 8px 0; page-break-inside: avoid;
 }
 .finding-tag {
-  font-family: monospace; font-size: 7pt; text-transform: uppercase;
+  font-size: 7pt; text-transform: uppercase;
   letter-spacing: 0.12em; margin-bottom: 3px; font-weight: 600;
 }
 .finding-crit { border-left-color: var(--crit-red); }
@@ -168,7 +179,7 @@ tbody tr:nth-child(even) { background: var(--gray-50); }
 }
 .phase-1 { background: var(--red); }
 .phase-2 { background: var(--black); }
-.phase-3 { background: linear-gradient(135deg, #2A0E0E, #8B2C2C); }
+.phase-3 { background: var(--grad-drift); }
 .phase-body { border: 1px solid var(--gray-200); border-top: none; border-radius: 0 0 4px 4px; padding: 0; }
 
 /* ─── PAGE FOOTER ─── */
@@ -186,7 +197,7 @@ tbody tr:nth-child(even) { background: var(--gray-50); }
 /* ─── CLOSING PAGE ─── */
 .closing {
   height: 100%;
-  background: linear-gradient(165deg, #0E0E0E 0%, #2A0E0E 40%, #6B1F1F 100%);
+  background: var(--grad-abyss);
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   text-align: center; padding: 22mm;
 }
@@ -195,6 +206,12 @@ tbody tr:nth-child(even) { background: var(--gray-50); }
 .closing-tagline { font-size: 14pt; font-weight: 300; color: var(--cream); margin-top: 32px; max-width: 400px; line-height: 1.5; }
 .closing-footer { position: absolute; bottom: 22mm; font-size: 8pt; color: var(--beige); opacity: 0.5; }
 
+/* ─── PRINT RULES ─── */
+.finding, .score-badge, .callout, .callout-dark, table tr {
+  page-break-inside: avoid;
+}
+h2, h3 { page-break-after: avoid; }
+
 /* ─── UTILITIES ─── */
 .text-center { text-align: center; }
 .text-right { text-align: right; }
@@ -202,7 +219,7 @@ tbody tr:nth-child(even) { background: var(--gray-50); }
 .mb-4 { margin-bottom: 16px; }
 .flex { display: flex; }
 .gap-4 { gap: 16px; }
-.font-mono { font-family: monospace; }
+.font-mono { font-family: 'DM Mono', 'Courier New', monospace; }
 .text-sm { font-size: 8pt; }
 .text-xs { font-size: 7pt; }
 .text-gray { color: var(--gray-600); }

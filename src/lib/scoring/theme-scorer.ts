@@ -112,6 +112,7 @@ export async function scoreTheme(
 
   const config = QUALITY_CONFIG[quality];
   const truncatedHtml = html.slice(0, config.htmlMaxChars);
+  const notesDepth = config.notesDepth ?? "concise";
 
   const results = await Promise.allSettled(
     Array.from(byDimension.entries()).map(([dimension, dimItems]) =>
@@ -122,7 +123,8 @@ export async function scoreTheme(
         truncatedHtml,
         url,
         config.scoringModel,
-        config.maxTokensScoring
+        config.maxTokensScoring,
+        notesDepth
       )
     )
   );
@@ -166,6 +168,7 @@ export async function scoreThemeDimension(
 
   const config = QUALITY_CONFIG[quality];
   const truncatedHtml = html.slice(0, config.htmlMaxChars);
+  const notesDepth = config.notesDepth ?? "concise";
 
   return scoreDimensionItems(
     theme,
@@ -174,7 +177,8 @@ export async function scoreThemeDimension(
     truncatedHtml,
     url,
     config.scoringModel,
-    config.maxTokensScoring
+    config.maxTokensScoring,
+    notesDepth
   );
 }
 
@@ -197,7 +201,8 @@ async function scoreDimensionItems(
   html: string,
   url: string,
   model: string,
-  maxTokens: number
+  maxTokens: number,
+  notesDepth: "concise" | "detailed" = "concise"
 ): Promise<Omit<AuditItem, "id" | "audit_id">[]> {
   const anthropic = new Anthropic();
   const systemPrompt = THEME_PROMPTS[theme] || "Tu es un auditeur web expert.";
@@ -205,6 +210,10 @@ async function scoreDimensionItems(
   const criteriaList = items
     .map((i) => `- ${i.code}: ${i.label} — ${i.description}`)
     .join("\n");
+
+  const notesInstruction = notesDepth === "detailed"
+    ? `"notes": "Analyse détaillée en 3-5 phrases : (1) constat factuel observé dans le HTML, (2) impact sur le référencement/visibilité IA, (3) recommandation concrète avec exemple de code/config si applicable"`
+    : `"notes": "explication courte"`;
 
   const prompt = `${systemPrompt}
 
@@ -218,7 +227,7 @@ ${criteriaList}
 
 Réponds UNIQUEMENT en JSON valide, sans texte avant ou après :
 [
-  { "code": "${items[0].code}", "status": "pass"|"partial"|"fail", "score": 0-100, "notes": "explication courte" }
+  { "code": "${items[0].code}", "status": "pass"|"partial"|"fail", "score": 0-100, ${notesInstruction} }
 ]
 
 Règles de scoring :

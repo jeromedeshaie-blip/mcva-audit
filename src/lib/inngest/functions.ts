@@ -4,8 +4,10 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { createGeoProvider } from "@/lib/providers/geo/geo-provider";
 import { scoreItems, scoreCiteItems, aggregateScores, calculateSeoScore, scoreOneDimension, scoreOneCiteDimension, getCoreEeatDimensions, getCiteDimensions } from "@/lib/scoring/scorer";
+import { scoreTheme, getThemeDimensions } from "@/lib/scoring/theme-scorer";
 import { QUALITY_CONFIG } from "@/lib/constants";
-import type { QualityLevel, GeoData, SeoData } from "@/types/audit";
+import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
+import type { AuditTheme, QualityLevel, GeoData, SeoData } from "@/types/audit";
 import * as cheerio from "cheerio";
 
 // Site Audit imports
@@ -969,4 +971,287 @@ export const runBenchmarkBatch = inngest.createFunction(
   }
 );
 
-export const functions = [runExpressAudit, runFullAudit, runBenchmarkBatch];
+// --- Ultra Audit helpers ---
+
+/** Average of an array of numbers */
+function avgScore(scores: number[]): number {
+  if (scores.length === 0) return 0;
+  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+}
+
+/** Compute weighted global score from per-theme scores using GLOBAL_SCORE_WEIGHTS */
+function computeWeightedGlobal(themeScores: Partial<Record<AuditTheme, number>>): number {
+  let weighted = 0;
+  let totalWeight = 0;
+  for (const [theme, weight] of Object.entries(GLOBAL_SCORE_WEIGHTS)) {
+    const score = themeScores[theme as AuditTheme];
+    if (score !== undefined && score !== null) {
+      weighted += score * weight;
+      totalWeight += weight;
+    }
+  }
+  return totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
+}
+
+/**
+ * Ultra Audit — Inngest function
+ *
+ * Full 7-theme audit with detailed notes, step-per-dimension pattern:
+ * 1. Update status
+ * 2. Scrape HTML
+ * 3. Collect SEO/GEO data in parallel
+ * 4. Score CORE-EEAT (1 step per dimension)
+ * 5. Score CITE (1 step per dimension)
+ * 6. Score 5 theme dimensions (perf, a11y, rgesn, tech, contenu) — 1 step per theme
+ * 7. Generate action plan
+ * 8. Aggregate & save everything
+ * Duration: ~10-20 minutes
+ */
+export const runUltraAudit = inngest.createFunction(
+  {
+    id: "run-ultra-audit",
+    name: "Run Ultra Audit",
+    triggers: [{ event: "audit/ultra.requested" }],
+    retries: 1,
+    onFailure: async ({ event }: { event: any }) => {
+      const auditId = event.data?.event?.data?.auditId
+        ?? event.data?.auditId;
+      console.error(`[onFailure:run-ultra-audit] auditId=${auditId}, error=${JSON.stringify(event.data?.error || "unknown")}`);
+      if (auditId) {
+        try {
+          await updateAuditStatus(auditId, "error");
+        } catch (e) {
+          console.error(`[audit:${auditId}] onFailure: could not set error status:`, e);
+        }
+      }
+    },
+  },
+  async ({ event, step }: { event: any; step: any }) => {
+    const { auditId, url, domain, sector, quality: rawQuality } = event.data as {
+      auditId: string;
+      url: string;
+      domain: string;
+      sector: string;
+      quality?: string;
+    };
+    const quality = "ultra" as const;
+    const fullUrl = url.startsWith("http") ? url : `https://${url}`;
+
+    // ─── Step 1: Mark as processing ───
+    await step.run("update-status", async () => {
+      console.log(`[audit:${auditId}] Starting ultra audit for ${url}`);
+      await updateAuditStatus(auditId, "processing");
+    });
+
+    // ─── Step 2: Scrape HTML ───
+    const html = await step.run("scrape-html", async () => {
+      console.log(`[audit:${auditId}] Scraping HTML...`);
+      const h = await scrapeHtml(url);
+      console.log(`[audit:${auditId}] HTML scraped: ${h.length} chars`);
+      return h;
+    });
+
+    // ─── Step 3: Collect SEO + GEO data in parallel ───
+    const collectedData = await step.run("collect-data", async () => {
+      console.log(`[audit:${auditId}] Collecting SEO + GEO data...`);
+
+      const [seoResult, geoResult, competitorsResult] = await Promise.allSettled([
+        (async () => {
+          const seoProvider = await createSeoProvider();
+          return seoProvider.getDomainOverview(domain);
+        })(),
+        (async () => {
+          const geoProvider = await createGeoProvider();
+          const brandName = extractBrandName(html, domain);
+          return geoProvider.getAIVisibility(brandName, sector || "général", domain, quality);
+        })(),
+        (async () => {
+          const seoProvider = await createSeoProvider();
+          return seoProvider.getCompetitors(domain);
+        })(),
+      ]);
+
+      const seoData = seoResult.status === "fulfilled" ? seoResult.value : null;
+      const geoData = geoResult.status === "fulfilled" ? geoResult.value : null;
+      const competitors = competitorsResult.status === "fulfilled" ? competitorsResult.value : null;
+
+      if (seoResult.status === "rejected") console.error(`[audit:${auditId}] SEO data failed:`, seoResult.reason?.message);
+      if (geoResult.status === "rejected") console.error(`[audit:${auditId}] GEO data failed:`, geoResult.reason?.message);
+
+      return {
+        seoData: seoData || getEmptySeoData(),
+        geoData: geoData || getEmptyGeoData(),
+        competitors,
+      };
+    });
+
+    // ─── Step 4: CORE-EEAT scoring — 1 step per dimension ───
+    const coreEeatDims = getCoreEeatDimensions("full");
+    const coreEeatAllItems: Array<any> = [];
+
+    for (const dim of coreEeatDims) {
+      const dimItems = await step.run(`score-core-eeat-${dim}`, async () => {
+        console.log(`[audit:${auditId}] Scoring CORE-EEAT dimension ${dim}...`);
+        try {
+          return await scoreOneDimension(html, url, dim, "full", quality);
+        } catch (e: any) {
+          console.error(`[audit:${auditId}] CORE-EEAT ${dim} failed:`, e.message);
+          return [];
+        }
+      });
+      coreEeatAllItems.push(...dimItems);
+    }
+
+    // ─── Step 5: CITE scoring — 1 step per dimension ───
+    const citeDims = getCiteDimensions("full");
+    const citeAllItems: Array<any> = [];
+
+    for (const dim of citeDims) {
+      const dimItems = await step.run(`score-cite-${dim}`, async () => {
+        console.log(`[audit:${auditId}] Scoring CITE dimension ${dim}...`);
+        try {
+          return await scoreOneCiteDimension(html, url, dim, "full", quality);
+        } catch (e: any) {
+          console.error(`[audit:${auditId}] CITE ${dim} failed:`, e.message);
+          return [];
+        }
+      });
+      citeAllItems.push(...dimItems);
+    }
+
+    // ─── Step 6: Score 5 theme dimensions — 1 step per theme ───
+    const ultraThemes = ["perf", "a11y", "rgesn", "tech", "contenu"] as const;
+    const themeResults: Record<string, { items: any[]; score: number }> = {};
+
+    for (const theme of ultraThemes) {
+      const result = await step.run(`score-theme-${theme}`, async () => {
+        console.log(`[audit:${auditId}] Scoring theme ${theme}...`);
+        try {
+          const items = await scoreTheme(theme, html, url, "full", quality);
+          const scores = items.map((i) => i.score);
+          const avg = avgScore(scores);
+          console.log(`[audit:${auditId}] Theme ${theme}: ${items.length} items, avg=${avg}`);
+          return { items, score: avg };
+        } catch (e: any) {
+          console.error(`[audit:${auditId}] Theme ${theme} failed:`, e.message);
+          return { items: [], score: 0 };
+        }
+      });
+      themeResults[theme] = result;
+    }
+
+    // ─── Step 7: Generate action plan ───
+    const allScoredItems = [...coreEeatAllItems, ...citeAllItems];
+    for (const theme of ultraThemes) {
+      allScoredItems.push(...themeResults[theme].items);
+    }
+
+    const actions = await step.run("generate-action-plan", async () => {
+      if (allScoredItems.length === 0) {
+        console.warn(`[audit:${auditId}] No scored items, skipping action plan`);
+        return [];
+      }
+      try {
+        console.log(`[audit:${auditId}] Generating ultra action plan...`);
+        return await generateActionPlan(
+          allScoredItems, collectedData.seoData as SeoData, collectedData.geoData as GeoData, url, quality
+        );
+      } catch (e: any) {
+        console.error(`[audit:${auditId}] Action plan failed:`, e.message);
+        return [];
+      }
+    });
+
+    // ─── Step 8: Aggregate all scores & save everything ───
+    await step.run("save-all-results", async () => {
+      console.log(`[audit:${auditId}] Saving all ultra results...`);
+      const supabase = createServiceClient();
+
+      // CORE-EEAT & CITE aggregate scores
+      const coreEeatScores = aggregateScores(coreEeatAllItems);
+      const citeScores = aggregateScores(citeAllItems);
+      const scoreSeo = calculateSeoScore(coreEeatScores);
+      const scoreGeo = (collectedData.geoData as any).ai_visibility_score ?? 0;
+
+      // Theme scores
+      const scorePerf = themeResults.perf.score;
+      const scoreA11y = themeResults.a11y.score;
+      const scoreRgesn = themeResults.rgesn.score;
+      const scoreTech = themeResults.tech.score;
+      const scoreContenu = themeResults.contenu.score;
+
+      // Weighted global score
+      const themeScoresMap: Partial<Record<AuditTheme, number>> = {
+        seo: scoreSeo,
+        geo: scoreGeo,
+        perf: scorePerf,
+        a11y: scoreA11y,
+        rgesn: scoreRgesn,
+        tech: scoreTech,
+        contenu: scoreContenu,
+      };
+      const scoreGlobal = computeWeightedGlobal(themeScoresMap);
+
+      const seoProvider = await createSeoProvider();
+
+      // 1. Save scores (all 7 + global)
+      const { error: scoresErr } = await supabase.from("audit_scores").insert({
+        audit_id: auditId,
+        score_seo: scoreSeo,
+        score_geo: scoreGeo,
+        score_perf: scorePerf,
+        score_a11y: scoreA11y,
+        score_rgesn: scoreRgesn,
+        score_tech: scoreTech,
+        score_contenu: scoreContenu,
+        score_global: scoreGlobal,
+        score_core_eeat: coreEeatScores,
+        score_cite: citeScores,
+        seo_provider: seoProvider.name,
+        seo_data: collectedData.seoData,
+        geo_provider: process.env.GEO_PROVIDER || "direct_ai",
+        geo_data: collectedData.geoData,
+        competitors: collectedData.competitors,
+      });
+      if (scoresErr) {
+        console.error(`[audit:${auditId}] save scores failed:`, scoresErr.message);
+        throw new Error(`DB scores: ${scoresErr.message}`);
+      }
+
+      // 2. Save all items (CORE-EEAT + CITE + themes)
+      if (allScoredItems.length > 0) {
+        const { error: itemsErr } = await supabase.from("audit_items").insert(
+          allScoredItems.map((item: any) => ({ audit_id: auditId, ...item }))
+        );
+        if (itemsErr) console.error(`[audit:${auditId}] save items failed:`, itemsErr.message);
+      }
+
+      // 3. Save actions
+      if (actions.length > 0) {
+        const { error: actErr } = await supabase.from("audit_actions").insert(
+          actions.map((a: any) => ({ audit_id: auditId, ...a }))
+        );
+        if (actErr) console.error(`[audit:${auditId}] save actions failed:`, actErr.message);
+      }
+
+      // 4. Mark completed
+      const { error: completeErr } = await supabase
+        .from("audits")
+        .update({ status: "completed", completed_at: new Date().toISOString() })
+        .eq("id", auditId);
+      if (completeErr) {
+        throw new Error(`DB complete: ${completeErr.message}`);
+      }
+
+      console.log(
+        `[audit:${auditId}] ULTRA COMPLETED — SEO=${scoreSeo}, GEO=${scoreGeo}, ` +
+        `perf=${scorePerf}, a11y=${scoreA11y}, rgesn=${scoreRgesn}, tech=${scoreTech}, ` +
+        `contenu=${scoreContenu}, global=${scoreGlobal}, items=${allScoredItems.length}, actions=${actions.length}`
+      );
+    });
+
+    return { auditId, status: "completed" };
+  }
+);
+
+export const functions = [runExpressAudit, runFullAudit, runUltraAudit, runBenchmarkBatch];

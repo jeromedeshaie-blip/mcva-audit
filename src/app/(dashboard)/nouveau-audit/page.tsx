@@ -205,7 +205,7 @@ export default function NouveauAuditPage() {
       const initData = await fetchStep("/api/audit-direct/init", {
         url,
         sector,
-        quality,
+        quality: level === "ultra" ? "ultra" : quality,
         level,
         themes: effectiveThemes,
       }, "Init");
@@ -215,6 +215,58 @@ export default function NouveauAuditPage() {
       setGlobalProgress(10);
 
       if (abortRef.current) return;
+
+      // --- ULTRA: delegate to Inngest + poll for completion ---
+      if (level === "ultra") {
+        // The init endpoint already fired the Inngest event.
+        // Poll audit status every 5s until completed or error.
+        setThemeProgress((prev) => prev.map((tp) => ({ ...tp, status: "in-progress" })));
+        setGlobalProgress(15);
+
+        const POLL_INTERVAL = 5000;
+        const MAX_POLL_TIME = 20 * 60 * 1000; // 20 min
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < MAX_POLL_TIME) {
+          if (abortRef.current) return;
+
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+
+          try {
+            const res = await fetch(`/api/audit?id=${id}`);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const status = data.audit?.status;
+
+            // Animate progress based on elapsed time (estimate)
+            const elapsed = Date.now() - startTime;
+            const estimatedProgress = Math.min(90, 15 + Math.round((elapsed / MAX_POLL_TIME) * 75));
+            setGlobalProgress(estimatedProgress);
+
+            if (status === "completed") {
+              setThemeProgress((prev) => prev.map((tp) => ({ ...tp, status: "done" })));
+              setGlobalProgress(100);
+              setPageStep("redirect");
+              router.push(`/audit/${id}`);
+              return;
+            }
+
+            if (status === "error") {
+              throw new Error("L'audit ultra a echoue cote serveur. Veuillez reessayer.");
+            }
+          } catch (pollErr) {
+            if (pollErr instanceof Error && pollErr.message.includes("echoue cote serveur")) {
+              throw pollErr;
+            }
+            // Network error — keep polling
+            console.warn("[audit] Poll error, retrying:", pollErr);
+          }
+        }
+
+        throw new Error("Timeout : l'audit ultra n'a pas termine dans le delai imparti (20 min).");
+      }
+
+      // --- NON-ULTRA: existing step-by-step flow ---
 
       // --- Upload CSV files if present ---
       if (semrushFile || qwairyFile) {
@@ -760,15 +812,23 @@ export default function NouveauAuditPage() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {globalProgress < 10
-                    ? "Initialisation..."
-                    : globalProgress < 65
-                      ? "Scoring des criteres..."
-                      : globalProgress < 85
-                        ? "Collecte des donnees SEO/GEO..."
+                  {level === "ultra"
+                    ? (globalProgress < 10
+                      ? "Initialisation..."
+                      : globalProgress < 90
+                        ? "Audit ultra en cours (Inngest)..."
                         : globalProgress < 100
                           ? "Finalisation..."
-                          : "Termine !"}
+                          : "Termine !")
+                    : (globalProgress < 10
+                      ? "Initialisation..."
+                      : globalProgress < 65
+                        ? "Scoring des criteres..."
+                        : globalProgress < 85
+                          ? "Collecte des donnees SEO/GEO..."
+                          : globalProgress < 100
+                            ? "Finalisation..."
+                            : "Termine !")}
                 </span>
                 <span className="font-medium tabular-nums">
                   {globalProgress}%
@@ -844,7 +904,9 @@ export default function NouveauAuditPage() {
               <div className="flex items-center gap-3">
                 <div className="h-4 w-4 rounded-full border-2 border-[#A53535] border-t-transparent animate-spin" />
                 <p className="text-xs text-muted-foreground">
-                  Chaque etape prend 10-30 secondes. Ne fermez pas cette page.
+                  {level === "ultra"
+                    ? "Audit ultra en cours... Temps estime : 10-15 minutes. Ne fermez pas cette page."
+                    : "Chaque etape prend 10-30 secondes. Ne fermez pas cette page."}
                 </p>
               </div>
             )}

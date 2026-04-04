@@ -206,6 +206,7 @@ export const QUALITY_LEVELS = [
   { value: "eco", label: "Eco (test)", description: "Haiku + 1 modele GEO — ~$0.03", icon: "" },
   { value: "standard", label: "Standard", description: "Sonnet + 2 modeles GEO — ~$0.30", icon: "" },
   { value: "premium", label: "Premium (client)", description: "Sonnet + 4 modeles GEO — ~$0.50", icon: "" },
+  { value: "ultra", label: "Ultra (7 themes)", description: "Sonnet + 4 modeles GEO + notes detaillees — ~$2.00", icon: "" },
 ] as const;
 
 /** Quality level configuration */
@@ -215,18 +216,40 @@ export const QUALITY_CONFIG = {
     htmlMaxChars: 20000,
     geoModels: ["claude"] as const,
     maxTokensScoring: 1500,
+    actionPlanModel: "claude-haiku-4-20250404" as const,
+    actionPlanMaxTokens: 2500,
+    actionPlanCount: 15,
+    notesDepth: "concise" as const,
   },
   standard: {
     scoringModel: "claude-sonnet-4-6" as const,
     htmlMaxChars: 30000,
     geoModels: ["claude", "openai"] as const,
     maxTokensScoring: 2000,
+    actionPlanModel: "claude-sonnet-4-6" as const,
+    actionPlanMaxTokens: 2500,
+    actionPlanCount: 15,
+    notesDepth: "concise" as const,
   },
   premium: {
     scoringModel: "claude-sonnet-4-6" as const,
     htmlMaxChars: 30000,
     geoModels: ["claude", "openai", "perplexity", "gemini"] as const,
     maxTokensScoring: 2000,
+    actionPlanModel: "claude-sonnet-4-6" as const,
+    actionPlanMaxTokens: 2500,
+    actionPlanCount: 15,
+    notesDepth: "concise" as const,
+  },
+  ultra: {
+    scoringModel: "claude-sonnet-4-6" as const,
+    htmlMaxChars: 50000,
+    geoModels: ["claude", "openai", "perplexity", "gemini"] as const,
+    maxTokensScoring: 4000,
+    actionPlanModel: "claude-sonnet-4-6" as const,
+    actionPlanMaxTokens: 8000,
+    actionPlanCount: 25,
+    notesDepth: "detailed" as const,
   },
 } as const;
 

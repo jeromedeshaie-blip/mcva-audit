@@ -11,7 +11,7 @@ export type ItemStatus = "pass" | "partial" | "fail";
 export type Framework = "core_eeat" | "cite" | "perf" | "a11y" | "rgesn" | "tech" | "contenu";
 export type Priority = "P1" | "P2" | "P3" | "P4";
 export type UserRole = "analyst" | "bizdev" | "admin";
-export type QualityLevel = "eco" | "standard" | "premium";
+export type QualityLevel = "eco" | "standard" | "premium" | "ultra";
 
 // CORE-EEAT dimensions
 export type CoreEeatDimension = "C" | "O" | "R" | "E" | "Exp" | "Ept" | "A" | "T";
@@ -278,6 +278,8 @@ export interface AuditAction {
   impact_points: number;
   effort: string;
   category: "SEO" | "GEO" | "contenu" | "technique" | "notoriete";
+  theme?: string;
+  kpi?: string;
 }
 
 // --- Competitors ---

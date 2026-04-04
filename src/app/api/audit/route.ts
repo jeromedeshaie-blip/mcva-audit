@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Type d'audit invalide" }, { status: 400 });
   }
 
-  if (quality && !["eco", "standard", "premium"].includes(quality)) {
+  if (quality && !["eco", "standard", "premium", "ultra"].includes(quality)) {
     return NextResponse.json({ error: "Niveau de qualité invalide" }, { status: 400 });
   }
 
