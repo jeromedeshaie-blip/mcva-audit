@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
-import { generateActionPlan, generateUltraActionPlan } from "@/lib/scoring/action-plan";
 import type { SeoData, GeoData, QualityLevel, AuditTheme } from "@/types/audit";
 import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 
@@ -120,82 +119,40 @@ export async function POST(request: NextRequest) {
     site_audit_global: siteAuditData?.globalTechScore ?? null,
   };
 
-  // Run score save and action plan generation IN PARALLEL
-  // Score save is pure DB (~2s), action plan is Haiku call (~5-10s)
-  const [scoresSaveResult, actionPlanResult] = await Promise.allSettled([
-    // Save scores
-    (async () => {
-      await serviceClient.from("audit_scores").delete().eq("audit_id", auditId);
-      const { error: scoresErr } = await serviceClient.from("audit_scores").insert({
-        audit_id: auditId,
-        score_seo: scoreSeo,
-        score_geo: scoreGeo,
-        score_perf: themeScores.perf ?? null,
-        score_a11y: themeScores.a11y ?? null,
-        score_rgesn: themeScores.rgesn ?? null,
-        score_tech: themeScores.tech ?? null,
-        score_contenu: themeScores.contenu ?? null,
-        score_global: scoreGlobal,
-        score_core_eeat: coreEeatScores,
-        score_cite: citeScores,
-        perf_data: themeData.perf || {},
-        a11y_data: themeData.a11y || {},
-        rgesn_data: themeData.rgesn || {},
-        tech_data: themeData.tech || {},
-        contenu_data: themeData.contenu || {},
-        seo_provider: seoProvider.name,
-        seo_data: enrichedSeoData,
-        geo_provider: process.env.GEO_PROVIDER || "direct_ai",
-        geo_data: geoData || {},
-        competitors: competitors || null,
-      });
-      if (scoresErr) throw scoresErr;
-    })(),
+  // Save scores (pure DB, fast)
+  await serviceClient.from("audit_scores").delete().eq("audit_id", auditId);
+  const { error: scoresErr } = await serviceClient.from("audit_scores").insert({
+    audit_id: auditId,
+    score_seo: scoreSeo,
+    score_geo: scoreGeo,
+    score_perf: themeScores.perf ?? null,
+    score_a11y: themeScores.a11y ?? null,
+    score_rgesn: themeScores.rgesn ?? null,
+    score_tech: themeScores.tech ?? null,
+    score_contenu: themeScores.contenu ?? null,
+    score_global: scoreGlobal,
+    score_core_eeat: coreEeatScores,
+    score_cite: citeScores,
+    perf_data: themeData.perf || {},
+    a11y_data: themeData.a11y || {},
+    rgesn_data: themeData.rgesn || {},
+    tech_data: themeData.tech || {},
+    contenu_data: themeData.contenu || {},
+    seo_provider: seoProvider.name,
+    seo_data: enrichedSeoData,
+    geo_provider: process.env.GEO_PROVIDER || "direct_ai",
+    geo_data: geoData || {},
+    competitors: competitors || null,
+  });
 
-    // Generate strategic action plan via LLM (Haiku = fast)
-    (async () => {
-      if (items.length === 0) return [];
-      try {
-        const mappedItems = items.map((i: any) => ({
-            item_code: i.item_code,
-            item_label: i.item_label,
-            status: i.status,
-            score: i.score,
-            notes: i.notes,
-            dimension: i.dimension,
-            framework: i.framework,
-          }));
-        if (quality === "ultra") {
-          return await generateUltraActionPlan(
-            mappedItems,
-            enrichedSeoData as any,
-            geoData || null,
-            auditUrl,
-            quality
-          );
-        }
-        return await generateActionPlan(
-          mappedItems,
-          enrichedSeoData as any,
-          geoData || null,
-          auditUrl,
-          quality
-        );
-      } catch (e: any) {
-        console.error("[finalize] Action plan generation failed:", e.message);
-        return [];
-      }
-    })(),
-  ]);
-
-  if (scoresSaveResult.status === "rejected") {
+  if (scoresErr) {
     return NextResponse.json({
       error: "Erreur sauvegarde scores",
-      detail: (scoresSaveResult.reason as any)?.message,
+      detail: scoresErr.message,
     }, { status: 500 });
   }
 
-  // Collect all actions: tech recommendations + LLM strategic actions
+  // Save tech actions (non-LLM, from site audit)
   const techActions = (siteAuditData?.techRecommendations || []).map((rec: any) => ({
     audit_id: auditId,
     priority: rec.priority === "critical" ? "P1" : rec.priority === "high" ? "P2" : rec.priority === "medium" ? "P3" : "P4",
@@ -206,27 +163,13 @@ export async function POST(request: NextRequest) {
     category: rec.dimension === "geo" ? "GEO" : rec.dimension === "performance" ? "technique" : rec.dimension === "accessibility" ? "technique" : "SEO",
   }));
 
-  const llmActions = actionPlanResult.status === "fulfilled"
-    ? (actionPlanResult.value as any[]).map((a: any) => ({
-        audit_id: auditId,
-        priority: a.priority,
-        title: a.title,
-        description: a.description,
-        impact_points: a.impact_points,
-        effort: a.effort,
-        category: a.category,
-      }))
-    : [];
-
-  const allActions = [...llmActions, ...techActions];
-
-  // Save all actions
-  if (allActions.length > 0) {
+  if (techActions.length > 0) {
     await serviceClient.from("audit_actions").delete().eq("audit_id", auditId);
-    await serviceClient.from("audit_actions").insert(allActions);
+    await serviceClient.from("audit_actions").insert(techActions);
   }
 
   // Mark completed + cleanup HTML
+  // NOTE: Action plan (LLM) is generated in a separate /api/audit-direct/action-plan call
   await serviceClient
     .from("audits")
     .update({
@@ -251,7 +194,6 @@ export async function POST(request: NextRequest) {
       global: scoreGlobal,
     },
     itemCount: items.length,
-    actionCount: allActions.length,
-    llmActionsGenerated: llmActions.length,
+    techActionCount: techActions.length,
   });
 }

@@ -429,7 +429,7 @@ export default function NouveauAuditPage() {
 
       if (abortRef.current) return;
 
-      // --- Finalize ---
+      // --- Finalize (scores + DB, no LLM) ---
       setGlobalProgress(85);
       await fetchStep("/api/audit-direct/finalize", {
         auditId: id,
@@ -439,6 +439,18 @@ export default function NouveauAuditPage() {
         siteAuditData: dataRes.siteAuditData,
         quality: effectiveQuality,
       }, "Finalize");
+
+      // --- Action Plan (LLM call, separate step to stay within 60s) ---
+      setGlobalProgress(92);
+      try {
+        await fetchStep("/api/audit-direct/action-plan", {
+          auditId: id,
+          quality: effectiveQuality,
+        }, "Plan d\u2019action");
+      } catch (apErr) {
+        // Non-blocking: audit is already complete, action plan is a bonus
+        console.warn("[audit] Action plan generation failed, continuing:", apErr);
+      }
 
       // Mark all themes done
       setThemeProgress((prev) => prev.map((tp) => ({ ...tp, status: "done" })));
