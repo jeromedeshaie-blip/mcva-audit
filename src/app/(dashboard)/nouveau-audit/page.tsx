@@ -796,7 +796,7 @@ export default function NouveauAuditPage() {
                     ? (globalProgress < 10
                       ? "Initialisation..."
                       : globalProgress < 90
-                        ? "Audit ultra en cours (Inngest)..."
+                        ? "Audit ultra en cours..."
                         : globalProgress < 100
                           ? "Finalisation..."
                           : "Termine !")

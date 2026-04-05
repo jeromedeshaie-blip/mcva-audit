@@ -199,6 +199,7 @@ export const GEOGRAPHIC_SCOPES = [
 export const AUDIT_ITEM_COUNTS = {
   express: { core_eeat: 20, cite: 10, total: 30 },
   full: { core_eeat: 80, cite: 40, total: 120 },
+  ultra: { core_eeat: 80, cite: 40, perf: 15, a11y: 20, rgesn: 20, tech: 15, contenu: 15, total: 205 },
 } as const;
 
 /** Quality levels for audit */

@@ -14,7 +14,7 @@ interface AuditResultsProps {
   scores: AuditScores;
   items: AuditItem[];
   actions: AuditAction[];
-  auditType: "express" | "full";
+  auditType: "express" | "full" | "ultra";
   isSpa?: boolean;
 }
 
@@ -96,9 +96,14 @@ export function AuditResults({
           <TabsTrigger value="cite" className="flex-1">
             CITE
           </TabsTrigger>
-          {(scores.seo_data?.technical_checks || auditType === "full") && (
+          {(scores.seo_data?.technical_checks || auditType !== "express") && (
             <TabsTrigger value="technique" className="flex-1">
               Technique
+            </TabsTrigger>
+          )}
+          {auditType === "ultra" && (
+            <TabsTrigger value="themes" className="flex-1">
+              7 Themes
             </TabsTrigger>
           )}
           {actions.length > 0 && (
@@ -153,9 +158,41 @@ export function AuditResults({
           </Card>
         </TabsContent>
 
-        {(scores.seo_data?.technical_checks || auditType === "full") && (
+        {(scores.seo_data?.technical_checks || auditType !== "express") && (
           <TabsContent value="technique">
             <TechnicalChecklist seoData={scores.seo_data} />
+          </TabsContent>
+        )}
+
+        {auditType === "ultra" && (
+          <TabsContent value="themes">
+            <div className="space-y-6">
+              {[
+                { key: "perf", label: "Performance", score: scores.score_perf },
+                { key: "a11y", label: "Accessibilite", score: scores.score_a11y },
+                { key: "rgesn", label: "Eco-conception (RGESN)", score: scores.score_rgesn },
+                { key: "tech", label: "Technique", score: scores.score_tech },
+                { key: "contenu", label: "Contenu", score: scores.score_contenu },
+              ].map((theme) => {
+                const themeItems = items.filter((i) => i.framework === theme.key);
+                if (themeItems.length === 0) return null;
+                return (
+                  <Card key={theme.key}>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">{theme.label}</CardTitle>
+                        <Badge variant="outline" className="text-base px-3 py-1">
+                          {theme.score ?? 0}/100
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <ItemsList items={themeItems} />
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           </TabsContent>
         )}
 

@@ -108,7 +108,7 @@ export default function AuditDetailPage() {
                   variant="secondary"
                   className="bg-white/10 text-white/80 border-white/20"
                 >
-                  {audit.audit_type === "express" ? "Express" : "Complet"}
+                  {audit.audit_type === "express" ? "Express" : audit.audit_type === "ultra" ? "Ultra" : "Complet"}
                 </Badge>
                 <StatusBadge status={audit.status} />
                 <span className="text-sm text-white/50">
@@ -206,7 +206,7 @@ export default function AuditDetailPage() {
           scores={scores}
           items={items}
           actions={actions}
-          auditType={audit.audit_type as "express" | "full"}
+          auditType={audit.audit_type as "express" | "full" | "ultra"}
           isSpa={audit.is_spa}
         />
       )}
