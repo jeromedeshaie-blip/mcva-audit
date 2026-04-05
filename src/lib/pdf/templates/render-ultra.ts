@@ -385,7 +385,8 @@ function computeGlobalScore(themeScores: Record<AuditTheme, number>): number {
   let total = 0;
   let weightSum = 0;
   for (const theme of Object.keys(GLOBAL_SCORE_WEIGHTS) as AuditTheme[]) {
-    const score = themeScores[theme] ?? 0;
+    const score = themeScores[theme];
+    if (score == null) continue; // Ignore null/undefined scores
     const weight = GLOBAL_SCORE_WEIGHTS[theme];
     total += score * weight;
     weightSum += weight;

@@ -190,7 +190,9 @@ export default function AuditDetailPage() {
               Cet audit a rencontre une erreur.
             </p>
             <Link
-              href={`/audit-${audit.audit_type === "express" ? "express" : "complet"}?url=${encodeURIComponent(audit.url)}&sector=${encodeURIComponent(audit.sector || "")}`}
+              href={audit.audit_type === "ultra"
+                ? `/nouveau-audit?url=${encodeURIComponent(audit.url)}&sector=${encodeURIComponent(audit.sector || "")}`
+                : `/audit-${audit.audit_type === "express" ? "express" : "complet"}?url=${encodeURIComponent(audit.url)}&sector=${encodeURIComponent(audit.sector || "")}`}
             >
               <Button variant="outline" className="mt-3">
                 Relancer l&apos;audit

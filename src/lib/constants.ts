@@ -207,7 +207,7 @@ export const QUALITY_LEVELS = [
   { value: "eco", label: "Eco (test)", description: "Haiku + 1 modele GEO — ~$0.03", icon: "" },
   { value: "standard", label: "Standard", description: "Sonnet + 2 modeles GEO — ~$0.30", icon: "" },
   { value: "premium", label: "Premium (client)", description: "Sonnet + 4 modeles GEO — ~$0.50", icon: "" },
-  { value: "ultra", label: "Ultra (7 themes)", description: "Sonnet + 4 modeles GEO + notes detaillees — ~$2.00", icon: "" },
+  { value: "ultra", label: "Ultra (7 themes)", description: "Sonnet + 4 modeles GEO + notes detaillees — ~$3.00", icon: "" },
 ] as const;
 
 /** Quality level configuration */

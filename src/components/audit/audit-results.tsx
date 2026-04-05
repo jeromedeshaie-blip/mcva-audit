@@ -122,7 +122,7 @@ export function AuditResults({
             </CardHeader>
             <CardContent>
               <DimensionBar
-                dimensions={scores.score_core_eeat}
+                dimensions={scores.score_core_eeat || {}}
                 type="core_eeat"
               />
               <Separator className="my-6" />
@@ -141,9 +141,9 @@ export function AuditResults({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {Object.keys(scores.score_cite).length > 0 ? (
+              {Object.keys(scores.score_cite || {}).length > 0 ? (
                 <>
-                  <DimensionBar dimensions={scores.score_cite} type="cite" />
+                  <DimensionBar dimensions={scores.score_cite || {}} type="cite" />
                   <Separator className="my-6" />
                   <ItemsList
                     items={items.filter((i) => i.framework === "cite")}
@@ -221,24 +221,24 @@ export function AuditResults({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <MetricCard
               label="Modeles testes"
-              value={scores.geo_data.models_coverage?.toString() || "0"}
+              value={(scores.geo_data || {} as any).models_coverage?.toString() || "0"}
             />
             <MetricCard
               label="Citations detectees"
-              value={scores.geo_data.citation_count?.toString() || "0"}
+              value={(scores.geo_data || {} as any).citation_count?.toString() || "0"}
             />
             <MetricCard
               label="Marque mentionnee"
-              value={scores.geo_data.brand_mentioned ? "Oui" : "Non"}
+              value={(scores.geo_data || {} as any).brand_mentioned ? "Oui" : "Non"}
             />
             <MetricCard
               label="Sentiment"
-              value={formatSentiment(scores.geo_data.brand_sentiment)}
+              value={formatSentiment((scores.geo_data || {} as any).brand_sentiment)}
             />
           </div>
-          {scores.geo_data.models_tested && (
+          {(scores.geo_data || {} as any).models_tested && (
             <div className="mt-4 space-y-2">
-              {scores.geo_data.models_tested.map((model) => (
+              {(scores.geo_data || {} as any).models_tested.map((model: any) => (
                 <div
                   key={model.model}
                   className="flex items-center justify-between p-3 bg-muted rounded-lg"

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
-import { generateActionPlan } from "@/lib/scoring/action-plan";
+import { generateActionPlan, generateUltraActionPlan } from "@/lib/scoring/action-plan";
 import type { SeoData, GeoData, QualityLevel, AuditTheme } from "@/types/audit";
 import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 
@@ -156,8 +156,7 @@ export async function POST(request: NextRequest) {
     (async () => {
       if (items.length === 0) return [];
       try {
-        return await generateActionPlan(
-          items.map((i: any) => ({
+        const mappedItems = items.map((i: any) => ({
             item_code: i.item_code,
             item_label: i.item_label,
             status: i.status,
@@ -165,7 +164,18 @@ export async function POST(request: NextRequest) {
             notes: i.notes,
             dimension: i.dimension,
             framework: i.framework,
-          })),
+          }));
+        if (quality === "ultra") {
+          return await generateUltraActionPlan(
+            mappedItems,
+            enrichedSeoData as any,
+            geoData || null,
+            auditUrl,
+            quality
+          );
+        }
+        return await generateActionPlan(
+          mappedItems,
           enrichedSeoData as any,
           geoData || null,
           auditUrl,

@@ -44,11 +44,24 @@ export async function POST(request: NextRequest) {
   const html = audit.scraped_html;
   const url = audit.url;
 
-  // Score all dimensions in parallel
+  // Score dimensions — sequential for ultra (rate limit), parallel otherwise
   const scoreFn = framework === "core_eeat" ? scoreOneDimension : scoreOneCiteDimension;
-  const results = await Promise.allSettled(
-    dimensions.map((dim) => scoreFn(html, url, dim, "full", quality))
-  );
+  let results: PromiseSettledResult<any>[];
+  if (quality === "ultra") {
+    results = [];
+    for (const dim of dimensions) {
+      const result = await Promise.allSettled([scoreFn(html, url, dim, "full", quality)]);
+      results.push(result[0]);
+      // Delay between calls to avoid Anthropic rate limits
+      if (dimensions.indexOf(dim) < dimensions.length - 1) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+  } else {
+    results = await Promise.allSettled(
+      dimensions.map((dim) => scoreFn(html, url, dim, "full", quality))
+    );
+  }
 
   // Collect items and track failures
   const items: any[] = [];
