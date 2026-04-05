@@ -198,8 +198,8 @@ export interface QwairyData {
 }
 
 export interface UltraAuditData extends PdfRenderData {
-  /** Per-theme scores */
-  themeScores: Record<AuditTheme, number>;
+  /** Per-theme scores (null = non évalué) */
+  themeScores: Record<AuditTheme, number | null>;
   /** Optional client context */
   clientContext?: {
     clientName?: string;
@@ -297,6 +297,29 @@ function padSection(n: number): string {
   return String(n).padStart(2, "0");
 }
 
+/** Render a "Non évalué" placeholder page for themes with null score and 0 items */
+function renderNotEvaluatedSection(
+  num: string,
+  title: string,
+  themeKey: string,
+  ref: string,
+  pageNum: number,
+): string {
+  const sectionTitle = SHORT_LABELS[themeKey as AuditTheme] || title;
+  return `<div class="page" data-section="${themeKey}">
+  ${renderSectionHeader(themeKey, num, sectionTitle, "Non évalué")}
+  <div class="page-inner" style="padding-top:6mm;">
+    <div style="margin-top:12mm;padding:6mm;background:var(--cream);border-radius:3px;border-left:3px solid var(--beige);">
+      <p style="font-size:10pt;color:var(--gray-600);margin:0;">
+        <strong>Non évalué</strong> — Ce module n\u2019a pas été scoré lors de cet audit.
+        Les données seront disponibles lors d\u2019un audit Ultra complet.
+      </p>
+    </div>
+    ${renderPageFooter(ref, pageNum)}
+  </div>
+</div>`;
+}
+
 function impactStars(points: number): string {
   if (points >= 8) return stars(5);
   if (points >= 6) return stars(4);
@@ -381,7 +404,7 @@ const SECTION_TOC_LABELS: Record<string, string> = {
 
 // ─── Global score ───
 
-function computeGlobalScore(themeScores: Record<AuditTheme, number>): number {
+function computeGlobalScore(themeScores: Record<AuditTheme, number | null>): number {
   let total = 0;
   let weightSum = 0;
   for (const theme of Object.keys(GLOBAL_SCORE_WEIGHTS) as AuditTheme[]) {
@@ -569,7 +592,7 @@ function validateDataCompleteness(data: UltraAuditData): string[] {
 
 // ─── SVG Radar Chart ───
 
-function generateRadarSvg(themeScores: Record<AuditTheme, number>): string {
+function generateRadarSvg(themeScores: Record<AuditTheme, number | null>): string {
   const themes = THEME_ORDER;
   const count = themes.length;
   const cx = 125;
@@ -678,27 +701,37 @@ function renderThemeSection(
 ): string {
   const { audit, items, actions, themeScores } = data;
   const ref = audit.reference ?? audit.domain;
-  const score = themeScores[theme] ?? 0;
+  const score = themeScores[theme];
   const themeItems = itemsByTheme(items, theme);
+
+  // Si le thème n'a pas été évalué (null score + 0 items), afficher "Non évalué"
+  if (score == null && themeItems.length === 0) {
+    const sectionTitle = SHORT_LABELS[theme];
+    return renderNotEvaluatedSection(
+      padSection(sectionNum), sectionTitle, theme, ref, sectionNum
+    );
+  }
+
+  const displayScore = score ?? 0;
   const themeActions = actions.filter(
     (a) => a.theme === theme || a.category === theme || a.category === CATEGORY_LABELS[theme]
   );
 
   const sectionId = theme;
   const sectionTitle = SHORT_LABELS[theme];
-  const subtitle = `${themeItems.length} crit\u00e8res \u00B7 Score ${score}/100`;
+  const subtitle = `${themeItems.length} crit\u00e8res \u00B7 Score ${displayScore}/100`;
 
   // Page 1: header + badge + intro + top 5 findings
   let page1 = `<div class="page">
   ${renderSectionHeader(sectionId, padSection(sectionNum), `${sectionTitle}`, subtitle)}
   <div class="page-inner" style="padding-top:6mm;">
 
-    <div class="score-badge ${scoreColorClass(score)}" style="float:right; margin-left:4mm;">
-      <div class="num">${score}</div>
+    <div class="score-badge ${scoreColorClass(displayScore)}" style="float:right; margin-left:4mm;">
+      <div class="num">${displayScore}</div>
       <div class="lbl">${esc(sectionTitle)}</div>
     </div>
 
-    ${generateThemeIntro(theme, score, themeItems)}
+    ${generateThemeIntro(theme, displayScore, themeItems)}
 
     <h2>Top constats</h2>
     ${themeItems.length > 0 ? renderFindingsFromItems(themeItems, 5) : '<p class="text-muted">Aucun crit\u00e8re \u00e9valu\u00e9 pour cette th\u00e9matique.</p>'}
@@ -1193,8 +1226,14 @@ function renderGeoSection(data: UltraAuditData): string {
 function renderPerfSection(data: UltraAuditData): string {
   const { audit, items, themeScores, scores } = data;
   const ref = audit.reference ?? audit.domain;
-  const perfScore = themeScores.perf ?? 0;
+  const rawPerfScore = themeScores.perf;
   const perfItems = itemsByTheme(items, "perf");
+
+  // Si non évalué, afficher page "Non évalué"
+  if (rawPerfScore == null && perfItems.length === 0) {
+    return renderNotEvaluatedSection("05", "Performance — Core Web Vitals", "perf", ref, 9);
+  }
+  const perfScore = rawPerfScore ?? 0;
   const perfActions = data.actions.filter(
     (a) => a.theme === "perf" || a.category === "technique"
   );

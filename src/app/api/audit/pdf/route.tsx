@@ -146,11 +146,11 @@ export async function GET(request: NextRequest) {
         themeScores: {
           seo: scores.score_seo ?? 0,
           geo: scores.score_geo ?? 0,
-          perf: scores.score_perf ?? 0,
-          a11y: scores.score_a11y ?? 0,
-          rgesn: scores.score_rgesn ?? 0,
-          tech: scores.score_tech ?? 0,
-          contenu: scores.score_contenu ?? 0,
+          perf: scores.score_perf,          // null = non évalué
+          a11y: scores.score_a11y,
+          rgesn: scores.score_rgesn,
+          tech: scores.score_tech,
+          contenu: scores.score_contenu,
         },
         clientContext: {
           clientName: audit.brand_name || audit.domain,
@@ -175,6 +175,7 @@ export async function GET(request: NextRequest) {
     if (format === "html") {
       const printHtml = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Audit PDF</title>
+<style>@media print { @page { margin: 0; } body { margin: 0; } }</style>
 <script>window.onload=function(){window.print();}</script>
 </head><body>${html}</body></html>`;
       return new NextResponse(printHtml, {

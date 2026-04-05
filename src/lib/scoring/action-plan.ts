@@ -136,7 +136,7 @@ JSON uniquement, sans texte avant ni apres.`;
     const validPriorities = ["P1", "P2", "P3", "P4"];
     const validCategories = ["technique", "contenu", "GEO", "notoriete", "SEO"];
 
-    return parsed.slice(0, 15).map((action: any) => ({
+    const mapped = parsed.slice(0, 20).map((action: any) => ({
       priority: validPriorities.includes(action.priority) ? action.priority : "P3",
       title:
         typeof action.title === "string"
@@ -154,10 +154,33 @@ JSON uniquement, sans texte avant ni apres.`;
         typeof action.effort === "string" ? action.effort.slice(0, 30) : "1-2 jours",
       category: validCategories.includes(action.category) ? action.category : "SEO",
     }));
+    return deduplicateActions(mapped).slice(0, 15);
   } catch (error) {
     console.error("[action-plan] LLM generation failed:", error);
     return generateFallbackActionPlan(failedItems);
   }
+}
+
+/**
+ * Deduplicate actions by normalized title (keep highest impact).
+ */
+function deduplicateActions<T extends { title: string; impact_points: number }>(
+  actions: T[]
+): T[] {
+  const seen = new Map<string, T>();
+  for (const action of actions) {
+    const key = action.title
+      .toLowerCase()
+      .replace(/[^a-zàâäéèêëïîôùûüÿç0-9\s]/g, "")
+      .split(/\s+/)
+      .slice(0, 5)
+      .join(" ");
+    const existing = seen.get(key);
+    if (!existing || action.impact_points > existing.impact_points) {
+      seen.set(key, action);
+    }
+  }
+  return Array.from(seen.values());
 }
 
 function safeParseJsonActions(text: string): any[] | null {
@@ -565,10 +588,12 @@ JSON uniquement, sans texte avant ni après.`;
         typeof action.kpi === "string" ? action.kpi.slice(0, 300) : "",
     }));
 
-    // Validate theme coverage and log warnings
-    validateUltraThemeCoverage(actions);
+    const deduplicated = deduplicateActions(actions);
 
-    return actions;
+    // Validate theme coverage and log warnings
+    validateUltraThemeCoverage(deduplicated);
+
+    return deduplicated;
   } catch (error) {
     console.error("[ultra-action-plan] LLM generation failed:", error);
     return generateUltraFallbackActionPlan(failedItems);

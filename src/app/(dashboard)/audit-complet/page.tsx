@@ -22,6 +22,7 @@ type AuditStep =
   | "scoring_4"
   | "scoring_5"
   | "scoring_6"
+  | "themes"
   | "data"
   | "finalize"
   | "completed"
@@ -36,6 +37,7 @@ const STEP_LABELS: Record<AuditStep, string> = {
   scoring_4: "Scoring CORE-EEAT — A, T (4/6)...",
   scoring_5: "Scoring CITE — C, I (5/6)...",
   scoring_6: "Scoring CITE — T, E (6/6)...",
+  themes: "Scoring thematique (Perf, A11y, Tech, Contenu, Eco)...",
   data: "Collecte donnees SEO, GEO et audit technique...",
   finalize: "Finalisation, plan d'action et sauvegarde...",
   completed: "Audit termine !",
@@ -45,19 +47,20 @@ const STEP_LABELS: Record<AuditStep, string> = {
 const STEP_PROGRESS: Record<AuditStep, number> = {
   idle: 0,
   init: 4,
-  scoring_1: 12,
-  scoring_2: 22,
-  scoring_3: 32,
-  scoring_4: 42,
-  scoring_5: 52,
-  scoring_6: 62,
+  scoring_1: 10,
+  scoring_2: 18,
+  scoring_3: 26,
+  scoring_4: 34,
+  scoring_5: 42,
+  scoring_6: 50,
+  themes: 62,
   data: 78,
   finalize: 90,
   completed: 100,
   error: 0,
 };
 
-const MAX_RETRIES = 1;
+const MAX_RETRIES = 2;
 
 export default function AuditCompletPage() {
   return (
@@ -77,18 +80,30 @@ async function fetchStep(
   const label = stepLabel || url;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(310_000),
+      });
+    } catch (networkErr) {
+      if (attempt < retries) {
+        console.warn(`[audit] Network error on ${label}, retry ${attempt + 1}/${retries}...`);
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      throw new Error(`Erreur reseau a l'etape "${label}". Verifiez votre connexion et reessayez.`);
+    }
 
     // Handle Vercel timeout / non-JSON errors
     const contentType = res.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
       if ((res.status === 504 || res.status === 502) && attempt < retries) {
         console.warn(`[audit] Timeout on ${label}, retry ${attempt + 1}/${retries}...`);
-        continue; // retry
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
       }
       if (res.status === 504 || res.status === 502) {
         throw new Error(`Timeout serveur a l'etape "${label}". Veuillez reessayer.`);
@@ -166,7 +181,26 @@ function AuditCompletContent() {
         }, batch.label);
       }
 
-      // ─── Step 6: Data collection (SEO + GEO + site audit) ───
+      // ─── Step 7: Score new themes (perf, a11y, tech, contenu, rgesn) ───
+      setStep("themes");
+      setProgress(STEP_PROGRESS.themes);
+      const newThemes = ["perf", "a11y", "tech", "contenu", "rgesn"];
+      for (let tIdx = 0; tIdx < newThemes.length; tIdx++) {
+        const theme = newThemes[tIdx];
+        setProgress(50 + Math.round(((tIdx + 1) / newThemes.length) * 14));
+        try {
+          await fetchStep("/api/audit-direct/score-theme", {
+            auditId: id,
+            theme,
+            quality,
+          }, `Theme ${theme}`);
+        } catch (themeErr) {
+          // Résilient : on continue même si un thème échoue
+          console.warn(`[audit-complet] Theme ${theme} failed:`, themeErr);
+        }
+      }
+
+      // ─── Step 8: Data collection (SEO + GEO + site audit) ───
       setStep("data");
       setProgress(STEP_PROGRESS.data);
       const dataRes = await fetchStep("/api/audit-direct/data", { auditId: id, quality }, "Data SEO/GEO");
