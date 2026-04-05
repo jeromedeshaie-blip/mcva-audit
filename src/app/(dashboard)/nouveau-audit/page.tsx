@@ -81,7 +81,7 @@ interface ThemeProgress {
 // Helper — same pattern as audit-complet
 // ---------------------------------------------------------------------------
 
-const MAX_RETRIES = 1;
+const MAX_RETRIES = 2;
 
 async function fetchStep(
   url: string,
@@ -93,16 +93,29 @@ async function fetchStep(
   const label = stepLabel || url;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(90_000), // 90s browser-side timeout
+      });
+    } catch (networkErr) {
+      // Network error or browser timeout (TypeError: Failed to fetch)
+      if (attempt < retries) {
+        console.warn(`[audit] Network error on ${label}, retry ${attempt + 1}/${retries}...`);
+        await new Promise((r) => setTimeout(r, 2000)); // wait 2s before retry
+        continue;
+      }
+      throw new Error(`Erreur reseau a l\u2019etape "${label}". Verifiez votre connexion et reessayez.`);
+    }
 
     const contentType = res.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
       if ((res.status === 504 || res.status === 502) && attempt < retries) {
         console.warn(`[audit] Timeout on ${label}, retry ${attempt + 1}/${retries}...`);
+        await new Promise((r) => setTimeout(r, 2000));
         continue;
       }
       if (res.status === 504 || res.status === 502) {
