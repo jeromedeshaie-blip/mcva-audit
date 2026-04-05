@@ -265,12 +265,25 @@ export default function NouveauAuditPage() {
           );
         }
 
-        const coreEeatBatches = [
-          { dimensions: ["C", "O"], label: "CORE-EEAT C,O" },
-          { dimensions: ["R", "E"], label: "CORE-EEAT R,E" },
-          { dimensions: ["Exp", "Ept"], label: "CORE-EEAT Exp,Ept" },
-          { dimensions: ["A", "T"], label: "CORE-EEAT A,T" },
-        ];
+        // Ultra: 1 dimension per call (Sonnet + 50k HTML ≈ 30s each, 2 would timeout at 60s)
+        // Non-ultra: batch 2 dimensions per call (faster with smaller models)
+        const coreEeatBatches = effectiveQuality === "ultra"
+          ? [
+              { dimensions: ["C"], label: "CORE-EEAT C" },
+              { dimensions: ["O"], label: "CORE-EEAT O" },
+              { dimensions: ["R"], label: "CORE-EEAT R" },
+              { dimensions: ["E"], label: "CORE-EEAT E" },
+              { dimensions: ["Exp"], label: "CORE-EEAT Exp" },
+              { dimensions: ["Ept"], label: "CORE-EEAT Ept" },
+              { dimensions: ["A"], label: "CORE-EEAT A" },
+              { dimensions: ["T"], label: "CORE-EEAT T" },
+            ]
+          : [
+              { dimensions: ["C", "O"], label: "CORE-EEAT C,O" },
+              { dimensions: ["R", "E"], label: "CORE-EEAT R,E" },
+              { dimensions: ["Exp", "Ept"], label: "CORE-EEAT Exp,Ept" },
+              { dimensions: ["A", "T"], label: "CORE-EEAT A,T" },
+            ];
 
         for (let bIdx = 0; bIdx < coreEeatBatches.length; bIdx++) {
           if (abortRef.current) return;
@@ -302,10 +315,18 @@ export default function NouveauAuditPage() {
             );
           }
 
-          const citeBatches = [
-            { dimensions: ["C", "I"], label: "CITE C,I" },
-            { dimensions: ["T", "E"], label: "CITE T,E" },
-          ];
+          // Ultra: 1 dimension per call (same reason as CORE-EEAT)
+          const citeBatches = effectiveQuality === "ultra"
+            ? [
+                { dimensions: ["C"], label: "CITE C" },
+                { dimensions: ["I"], label: "CITE I" },
+                { dimensions: ["T"], label: "CITE T" },
+                { dimensions: ["E"], label: "CITE E" },
+              ]
+            : [
+                { dimensions: ["C", "I"], label: "CITE C,I" },
+                { dimensions: ["T", "E"], label: "CITE T,E" },
+              ];
 
           for (const batch of citeBatches) {
             if (abortRef.current) return;
