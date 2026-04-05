@@ -11,7 +11,7 @@ import type { AccessibilityViolation } from "@/lib/siteaudit/types";
 import type { QualityLevel } from "@/types/audit";
 import { mockGeoData } from "@/lib/scoring/mock-scorer";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 /**
  * POST /api/audit-direct/data

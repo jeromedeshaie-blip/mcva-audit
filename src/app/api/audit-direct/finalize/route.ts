@@ -7,7 +7,7 @@ import { mockActionPlan } from "@/lib/scoring/mock-scorer";
 import type { SeoData, GeoData, QualityLevel, AuditTheme } from "@/types/audit";
 import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 /**
  * POST /api/audit-direct/finalize

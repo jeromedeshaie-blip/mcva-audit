@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { runMonitoring } from "@/lib/monitor";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {

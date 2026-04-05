@@ -4,7 +4,7 @@ import { scoreOneDimension, scoreOneCiteDimension } from "@/lib/scoring/scorer";
 import { mockScoreOneDimension, mockScoreOneCiteDimension } from "@/lib/scoring/mock-scorer";
 import type { QualityLevel } from "@/types/audit";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 /**
  * POST /api/audit-direct/score

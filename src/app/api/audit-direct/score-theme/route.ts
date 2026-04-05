@@ -4,7 +4,7 @@ import { scoreThemeDimension, getThemeDimensions } from "@/lib/scoring/theme-sco
 import { mockScoreThemeDimension, mockGetThemeDimensions } from "@/lib/scoring/mock-scorer";
 import type { QualityLevel } from "@/types/audit";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 /**
  * POST /api/audit-direct/score-theme

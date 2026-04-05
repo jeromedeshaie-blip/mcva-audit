@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import * as cheerio from "cheerio";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 /**
  * POST /api/audit-direct/init
