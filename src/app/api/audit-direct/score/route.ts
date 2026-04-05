@@ -100,6 +100,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // If ALL dimensions failed, return error so frontend can retry
+  if (items.length === 0 && failed.length > 0) {
+    return NextResponse.json({
+      error: `Toutes les dimensions ont echoue (${framework})`,
+      detail: failed.join("; "),
+      scored: dimensions,
+      framework,
+      itemCount: 0,
+      failed,
+    }, { status: 502 });
+  }
+
   return NextResponse.json({
     scored: dimensions,
     framework,
