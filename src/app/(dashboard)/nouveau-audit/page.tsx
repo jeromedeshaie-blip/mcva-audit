@@ -216,57 +216,9 @@ export default function NouveauAuditPage() {
 
       if (abortRef.current) return;
 
-      // --- ULTRA: delegate to Inngest + poll for completion ---
-      if (level === "ultra") {
-        // The init endpoint already fired the Inngest event.
-        // Poll audit status every 5s until completed or error.
-        setThemeProgress((prev) => prev.map((tp) => ({ ...tp, status: "in-progress" })));
-        setGlobalProgress(15);
-
-        const POLL_INTERVAL = 5000;
-        const MAX_POLL_TIME = 25 * 60 * 1000; // 25 min
-        const startTime = Date.now();
-
-        while (Date.now() - startTime < MAX_POLL_TIME) {
-          if (abortRef.current) return;
-
-          await new Promise((r) => setTimeout(r, POLL_INTERVAL));
-
-          try {
-            const res = await fetch(`/api/audit?id=${id}`);
-            if (!res.ok) continue;
-            const data = await res.json();
-            const status = data.audit?.status;
-
-            // Animate progress based on elapsed time
-            const elapsed = Date.now() - startTime;
-            const estimatedProgress = Math.min(90, 15 + Math.round((elapsed / MAX_POLL_TIME) * 75));
-            setGlobalProgress(estimatedProgress);
-
-            if (status === "completed") {
-              setThemeProgress((prev) => prev.map((tp) => ({ ...tp, status: "done" })));
-              setGlobalProgress(100);
-              setPageStep("redirect");
-              router.push(`/audit/${id}`);
-              return;
-            }
-
-            if (status === "error") {
-              throw new Error("L'audit ultra a echoue cote serveur. Verifiez les logs Inngest.");
-            }
-          } catch (pollErr) {
-            if (pollErr instanceof Error && pollErr.message.includes("echoue cote serveur")) {
-              throw pollErr;
-            }
-            console.warn("[audit] Poll error, retrying:", pollErr);
-          }
-        }
-
-        throw new Error("Timeout : l'audit ultra n'a pas termine dans le delai imparti (25 min).");
-      }
-
-      // --- NON-ULTRA: step-by-step flow ---
-      const effectiveQuality = quality;
+      // All levels use the same step-by-step flow.
+      // Ultra: quality="ultra" (Sonnet, 50k HTML, detailed notes, per-dimension scoring)
+      const effectiveQuality = level === "ultra" ? "ultra" : quality;
 
       // --- Upload CSV files if present ---
       if (semrushFile || qwairyFile) {
@@ -375,8 +327,8 @@ export default function NouveauAuditPage() {
       }
 
       // Score new themes (perf, a11y, rgesn, tech, contenu) — resilient: continue on failure
-      // Ultra: score dimension-by-dimension to stay within 60s per API call
-      // Non-ultra: score all dimensions of a theme in one call (faster, fits in 60s)
+      // Ultra: score dimension-by-dimension (1 LLM call per API request, fits in 60s)
+      // Non-ultra: score all dimensions of a theme in one call (faster)
       for (let tIdx = 0; tIdx < newThemes.length; tIdx++) {
         if (abortRef.current) return;
         const theme = newThemes[tIdx];
@@ -388,11 +340,37 @@ export default function NouveauAuditPage() {
         setGlobalProgress(40 + Math.round(((tIdx + 1) / newThemes.length) * 25));
 
         try {
-          await fetchStep("/api/audit-direct/score-theme", {
-            auditId: id,
-            theme,
-            quality: effectiveQuality,
-          }, `Theme ${theme}`);
+          if (effectiveQuality === "ultra") {
+            // Ultra: get dimension list, then score each one individually
+            const dimRes = await fetchStep("/api/audit-direct/score-theme", {
+              auditId: id,
+              theme,
+              quality: effectiveQuality,
+              listDimensions: true,
+            }, `${theme} dims`);
+
+            const dims: string[] = dimRes.dimensions || [];
+            for (const dim of dims) {
+              if (abortRef.current) return;
+              try {
+                await fetchStep("/api/audit-direct/score-theme", {
+                  auditId: id,
+                  theme,
+                  dimension: dim,
+                  quality: effectiveQuality,
+                }, `${theme}/${dim}`);
+              } catch (dimErr) {
+                console.warn(`[audit] ${theme}/${dim} failed, continuing:`, dimErr);
+              }
+            }
+          } else {
+            // Non-ultra: score all dimensions in one call
+            await fetchStep("/api/audit-direct/score-theme", {
+              auditId: id,
+              theme,
+              quality: effectiveQuality,
+            }, `Theme ${theme}`);
+          }
 
           setThemeProgress((prev) =>
             prev.map((tp) =>
