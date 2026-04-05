@@ -9,6 +9,7 @@ import { computeGlobalScore, accessibilityViolationsToScore, readabilityToScore 
 import { generateRecommendations } from "@/lib/siteaudit/recommendations";
 import type { AccessibilityViolation } from "@/lib/siteaudit/types";
 import type { QualityLevel } from "@/types/audit";
+import { mockGeoData } from "@/lib/scoring/mock-scorer";
 
 export const maxDuration = 300;
 
@@ -40,6 +41,19 @@ export async function POST(request: NextRequest) {
   }
 
   const { url, domain, sector, brand_name: brandName } = audit;
+
+  // Dry-run mode: return mock GEO data + real site audit (no API costs)
+  if (quality === "dryrun") {
+    const siteAuditResult = await Promise.allSettled([runSiteAudit(url)]);
+    return NextResponse.json({
+      seoData: null,
+      geoData: mockGeoData(url),
+      competitors: null,
+      siteAuditData: siteAuditResult[0].status === "fulfilled" ? siteAuditResult[0].value : null,
+      errors: { seo: "dryrun", geo: null, siteAudit: siteAuditResult[0].status === "rejected" ? (siteAuditResult[0].reason as Error)?.message : null },
+      dryrun: true,
+    });
+  }
 
   // Run ALL data collection in parallel
   const [seoResult, geoResult, competitorsResult, siteAuditResult] = await Promise.allSettled([

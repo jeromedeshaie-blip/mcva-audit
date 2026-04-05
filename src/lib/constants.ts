@@ -252,6 +252,16 @@ export const QUALITY_CONFIG = {
     actionPlanCount: 25,
     notesDepth: "detailed" as const,
   },
+  dryrun: {
+    scoringModel: "mock" as const,
+    htmlMaxChars: 50000,
+    geoModels: ["mock"] as const,
+    maxTokensScoring: 0,
+    actionPlanModel: "mock" as const,
+    actionPlanMaxTokens: 0,
+    actionPlanCount: 25,
+    notesDepth: "detailed" as const,
+  },
 } as const;
 
 export type QualityConfig = typeof QUALITY_CONFIG[keyof typeof QUALITY_CONFIG];

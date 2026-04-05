@@ -16,7 +16,7 @@ import { THEME_LABELS, THEME_PRICES } from "@/types/audit";
 // Types & constants
 // ---------------------------------------------------------------------------
 
-type AuditLevel = "pre_audit" | "full" | "ultra";
+type AuditLevel = "pre_audit" | "full" | "ultra" | "dryrun";
 
 interface LevelCard {
   value: AuditLevel;
@@ -46,6 +46,13 @@ const LEVEL_CARDS: LevelCard[] = [
     label: "Ultra Audit",
     description: "7 thematiques + benchmark croise SEO\u00d7GEO + roadmap",
     price: "4\u2019900 CHF",
+    pages: "20-25 pages",
+  },
+  {
+    value: "dryrun",
+    label: "Dry Run (test)",
+    description: "Donnees fictives, 0 token API — pour tester le pipeline",
+    price: "Gratuit",
     pages: "20-25 pages",
   },
 ];
@@ -177,7 +184,7 @@ export default function NouveauAuditPage() {
 
   const handleLevelChange = (newLevel: AuditLevel) => {
     setLevel(newLevel);
-    if (newLevel === "ultra") {
+    if (newLevel === "ultra" || newLevel === "dryrun") {
       setSelectedThemes([...ALL_THEMES]);
     } else {
       // Keep first selected or default to seo
@@ -186,12 +193,12 @@ export default function NouveauAuditPage() {
   };
 
   // --- Computed ---
-  const effectiveThemes = level === "ultra" ? ALL_THEMES : selectedThemes;
+  const effectiveThemes = (level === "ultra" || level === "dryrun") ? ALL_THEMES : selectedThemes;
   const hasUpload = semrushFile !== null || qwairyFile !== null;
   const dataMode = hasUpload ? "B" : "A";
 
   const totalPrice =
-    level === "pre_audit"
+    level === "pre_audit" || level === "dryrun"
       ? 0
       : level === "ultra"
         ? 4900
@@ -231,7 +238,7 @@ export default function NouveauAuditPage() {
 
       // All levels use the same step-by-step flow.
       // Ultra: quality="ultra" (Sonnet, 50k HTML, detailed notes, per-dimension scoring)
-      const effectiveQuality = level === "ultra" ? "ultra" : quality;
+      const effectiveQuality = level === "dryrun" ? "dryrun" : level === "ultra" ? "ultra" : quality;
 
       // --- Upload CSV files if present ---
       if (semrushFile || qwairyFile) {

@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
     complet: "full",
     full: "full",
     ultra: "ultra",
+    dryrun: "ultra", // Dry-run saves as ultra type for full pipeline testing
   };
   const auditType = auditTypeMap[level] || "full";
 

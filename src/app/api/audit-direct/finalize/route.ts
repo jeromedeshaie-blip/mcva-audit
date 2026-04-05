@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
 import { generateActionPlan, generateUltraActionPlan } from "@/lib/scoring/action-plan";
+import { mockActionPlan } from "@/lib/scoring/mock-scorer";
 import type { SeoData, GeoData, QualityLevel, AuditTheme } from "@/types/audit";
 import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 
@@ -169,9 +170,11 @@ export async function POST(request: NextRequest) {
     await serviceClient.from("audit_actions").insert(techActions);
   }
 
-  // Generate LLM-based strategic action plan
+  // Generate action plan — mock for dryrun, LLM for real audits
   let llmActions: any[] = [];
-  if (items.length > 0) {
+  if (quality === "dryrun") {
+    llmActions = mockActionPlan(auditType === "ultra");
+  } else if (items.length > 0) {
     try {
       const mappedItems = items.map((i: any) => ({
         item_code: i.item_code,

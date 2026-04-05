@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { scoreOneDimension, scoreOneCiteDimension } from "@/lib/scoring/scorer";
+import { mockScoreOneDimension, mockScoreOneCiteDimension } from "@/lib/scoring/mock-scorer";
 import type { QualityLevel } from "@/types/audit";
 
 export const maxDuration = 300;
@@ -43,6 +44,20 @@ export async function POST(request: NextRequest) {
 
   const html = audit.scraped_html;
   const url = audit.url;
+
+  // Dry-run mode: return mock data without calling LLM
+  if (quality === "dryrun") {
+    const mockItems: any[] = framework === "core_eeat"
+      ? dimensions.flatMap((dim) => mockScoreOneDimension(dim, "full"))
+      : dimensions.flatMap((dim) => mockScoreOneCiteDimension(dim));
+
+    if (mockItems.length > 0) {
+      await serviceClient.from("audit_items").delete().eq("audit_id", auditId).in("dimension", dimensions);
+      await serviceClient.from("audit_items").insert(mockItems.map((item) => ({ audit_id: auditId, ...item })));
+    }
+
+    return NextResponse.json({ scored: dimensions, framework, itemCount: mockItems.length, dryrun: true });
+  }
 
   // Score dimensions — sequential for ultra (rate limit), parallel otherwise
   const scoreFn = framework === "core_eeat" ? scoreOneDimension : scoreOneCiteDimension;
