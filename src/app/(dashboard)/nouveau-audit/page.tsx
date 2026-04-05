@@ -99,7 +99,7 @@ async function fetchStep(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(90_000), // 90s browser-side timeout
+        signal: AbortSignal.timeout(310_000), // 310s browser-side timeout (above server 300s max)
       });
     } catch (networkErr) {
       // Network error or browser timeout (TypeError: Failed to fetch)
@@ -278,18 +278,12 @@ export default function NouveauAuditPage() {
           );
         }
 
-        // Ultra: 1 dimension per call (Sonnet + 50k HTML ≈ 30s each, 2 would timeout at 60s)
+        // Ultra: batch 4 dimensions per call (300s maxDuration allows larger batches)
         // Non-ultra: batch 2 dimensions per call (faster with smaller models)
         const coreEeatBatches = effectiveQuality === "ultra"
           ? [
-              { dimensions: ["C"], label: "CORE-EEAT C" },
-              { dimensions: ["O"], label: "CORE-EEAT O" },
-              { dimensions: ["R"], label: "CORE-EEAT R" },
-              { dimensions: ["E"], label: "CORE-EEAT E" },
-              { dimensions: ["Exp"], label: "CORE-EEAT Exp" },
-              { dimensions: ["Ept"], label: "CORE-EEAT Ept" },
-              { dimensions: ["A"], label: "CORE-EEAT A" },
-              { dimensions: ["T"], label: "CORE-EEAT T" },
+              { dimensions: ["C", "O", "R", "E"], label: "CORE-EEAT C,O,R,E" },
+              { dimensions: ["Exp", "Ept", "A", "T"], label: "CORE-EEAT Exp,Ept,A,T" },
             ]
           : [
               { dimensions: ["C", "O"], label: "CORE-EEAT C,O" },
@@ -328,13 +322,10 @@ export default function NouveauAuditPage() {
             );
           }
 
-          // Ultra: 1 dimension per call (same reason as CORE-EEAT)
+          // Ultra: all 4 CITE dimensions in one call (300s maxDuration)
           const citeBatches = effectiveQuality === "ultra"
             ? [
-                { dimensions: ["C"], label: "CITE C" },
-                { dimensions: ["I"], label: "CITE I" },
-                { dimensions: ["T"], label: "CITE T" },
-                { dimensions: ["E"], label: "CITE E" },
+                { dimensions: ["C", "I", "T", "E"], label: "CITE C,I,T,E" },
               ]
             : [
                 { dimensions: ["C", "I"], label: "CITE C,I" },
@@ -361,8 +352,7 @@ export default function NouveauAuditPage() {
       }
 
       // Score new themes (perf, a11y, rgesn, tech, contenu) — resilient: continue on failure
-      // Ultra: score dimension-by-dimension (1 LLM call per API request, fits in 60s)
-      // Non-ultra: score all dimensions of a theme in one call (faster)
+      // All quality levels: score all dimensions of a theme in one call (300s maxDuration)
       for (let tIdx = 0; tIdx < newThemes.length; tIdx++) {
         if (abortRef.current) return;
         const theme = newThemes[tIdx];
@@ -374,37 +364,11 @@ export default function NouveauAuditPage() {
         setGlobalProgress(40 + Math.round(((tIdx + 1) / newThemes.length) * 25));
 
         try {
-          if (effectiveQuality === "ultra") {
-            // Ultra: get dimension list, then score each one individually
-            const dimRes = await fetchStep("/api/audit-direct/score-theme", {
-              auditId: id,
-              theme,
-              quality: effectiveQuality,
-              listDimensions: true,
-            }, `${theme} dims`);
-
-            const dims: string[] = dimRes.dimensions || [];
-            for (const dim of dims) {
-              if (abortRef.current) return;
-              try {
-                await fetchStep("/api/audit-direct/score-theme", {
-                  auditId: id,
-                  theme,
-                  dimension: dim,
-                  quality: effectiveQuality,
-                }, `${theme}/${dim}`);
-              } catch (dimErr) {
-                console.warn(`[audit] ${theme}/${dim} failed, continuing:`, dimErr);
-              }
-            }
-          } else {
-            // Non-ultra: score all dimensions in one call
-            await fetchStep("/api/audit-direct/score-theme", {
-              auditId: id,
-              theme,
-              quality: effectiveQuality,
-            }, `Theme ${theme}`);
-          }
+          await fetchStep("/api/audit-direct/score-theme", {
+            auditId: id,
+            theme,
+            quality: effectiveQuality,
+          }, `Theme ${theme}`);
 
           setThemeProgress((prev) =>
             prev.map((tp) =>
@@ -429,8 +393,8 @@ export default function NouveauAuditPage() {
 
       if (abortRef.current) return;
 
-      // --- Finalize (scores + DB, no LLM) ---
-      setGlobalProgress(85);
+      // --- Finalize (scores + DB + action plan) ---
+      setGlobalProgress(80);
       await fetchStep("/api/audit-direct/finalize", {
         auditId: id,
         seoData: dataRes.seoData,
@@ -439,18 +403,6 @@ export default function NouveauAuditPage() {
         siteAuditData: dataRes.siteAuditData,
         quality: effectiveQuality,
       }, "Finalize");
-
-      // --- Action Plan (LLM call, separate step to stay within 60s) ---
-      setGlobalProgress(92);
-      try {
-        await fetchStep("/api/audit-direct/action-plan", {
-          auditId: id,
-          quality: effectiveQuality,
-        }, "Plan d\u2019action");
-      } catch (apErr) {
-        // Non-blocking: audit is already complete, action plan is a bonus
-        console.warn("[audit] Action plan generation failed, continuing:", apErr);
-      }
 
       // Mark all themes done
       setThemeProgress((prev) => prev.map((tp) => ({ ...tp, status: "done" })));

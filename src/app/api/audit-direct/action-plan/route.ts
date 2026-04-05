@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { generateActionPlan, generateUltraActionPlan } from "@/lib/scoring/action-plan";
 import type { QualityLevel } from "@/types/audit";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * POST /api/audit-direct/action-plan

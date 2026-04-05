@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
+import { generateActionPlan, generateUltraActionPlan } from "@/lib/scoring/action-plan";
 import type { SeoData, GeoData, QualityLevel, AuditTheme } from "@/types/audit";
 import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * POST /api/audit-direct/finalize
@@ -168,8 +169,48 @@ export async function POST(request: NextRequest) {
     await serviceClient.from("audit_actions").insert(techActions);
   }
 
+  // Generate LLM-based strategic action plan
+  let llmActions: any[] = [];
+  if (items.length > 0) {
+    try {
+      const mappedItems = items.map((i: any) => ({
+        item_code: i.item_code,
+        item_label: i.item_label,
+        status: i.status,
+        score: i.score,
+        notes: i.notes,
+        dimension: i.dimension,
+        framework: i.framework,
+      }));
+      if (quality === "ultra") {
+        llmActions = await generateUltraActionPlan(
+          mappedItems, enrichedSeoData as any, geoData || null, auditUrl, quality
+        );
+      } else {
+        llmActions = await generateActionPlan(
+          mappedItems, enrichedSeoData as any, geoData || null, auditUrl, quality
+        );
+      }
+    } catch (e: any) {
+      console.error("[finalize] Action plan generation failed:", e.message);
+    }
+  }
+
+  if (llmActions.length > 0) {
+    await serviceClient.from("audit_actions").insert(
+      llmActions.map((a: any) => ({
+        audit_id: auditId,
+        priority: a.priority,
+        title: a.title,
+        description: a.description,
+        impact_points: a.impact_points,
+        effort: a.effort,
+        category: a.category,
+      }))
+    );
+  }
+
   // Mark completed + cleanup HTML
-  // NOTE: Action plan (LLM) is generated in a separate /api/audit-direct/action-plan call
   await serviceClient
     .from("audits")
     .update({
@@ -195,5 +236,6 @@ export async function POST(request: NextRequest) {
     },
     itemCount: items.length,
     techActionCount: techActions.length,
+    llmActionCount: llmActions.length,
   });
 }

@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { scoreThemeDimension, getThemeDimensions } from "@/lib/scoring/theme-scorer";
 import type { QualityLevel } from "@/types/audit";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * POST /api/audit-direct/score-theme
@@ -70,12 +70,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ theme, dimensions: [], itemCount: 0 });
   }
 
-  // Score dimensions — sequentially for single dim, parallel for batch (non-ultra)
-  const results = await Promise.allSettled(
-    dimensions.map((dim) =>
-      scoreThemeDimension(theme, dim, html, url, effectiveMode as "express" | "full", quality)
-    )
-  );
+  // Score dimensions — ultra: batches of 3 parallel (rate limit safety), others: all parallel
+  let results: PromiseSettledResult<any>[];
+  if (quality === "ultra") {
+    // Batch of 3 parallel, sequential between batches (rate limit safety)
+    const BATCH_SIZE = 3;
+    results = [];
+    for (let i = 0; i < dimensions.length; i += BATCH_SIZE) {
+      const batch = dimensions.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map((dim) =>
+          scoreThemeDimension(theme, dim, html, url, effectiveMode as "express" | "full", quality)
+        )
+      );
+      results.push(...batchResults);
+      if (i + BATCH_SIZE < dimensions.length) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+  } else {
+    results = await Promise.allSettled(
+      dimensions.map((dim) =>
+        scoreThemeDimension(theme, dim, html, url, effectiveMode as "express" | "full", quality)
+      )
+    );
+  }
 
   // Collect items and track failures
   const items: any[] = [];

@@ -10,7 +10,7 @@ import { generateRecommendations } from "@/lib/siteaudit/recommendations";
 import type { AccessibilityViolation } from "@/lib/siteaudit/types";
 import type { QualityLevel } from "@/types/audit";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * POST /api/audit-direct/data
