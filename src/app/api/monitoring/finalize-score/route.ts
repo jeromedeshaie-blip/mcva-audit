@@ -90,24 +90,26 @@ export async function POST(request: NextRequest) {
     const diff = now.getDate() - day + (day === 0 ? -6 : 1);
     const weekStart = new Date(now.setDate(diff)).toISOString().split("T")[0];
 
-    // Create score entry
+    // Upsert score entry (same client + same week → update)
+    const scorePayload = {
+      client_id: clientId,
+      week_start: weekStart,
+      score: runScore.scoreGeo,
+      score_by_llm: scoreByLlm,
+      score_by_lang: { fr: runScore.scoreGeo },
+      citation_rate: Math.round(citationRate * 100) / 100,
+      score_presence: runScore.scorePresence,
+      score_exactitude: runScore.scoreExactitude,
+      score_sentiment: runScore.scoreSentiment,
+      score_recommendation: runScore.scoreRecommendation,
+      total_responses: responseScores.length,
+      total_cost_usd: Math.round(totalCost * 10000) / 10000,
+      duration_ms: startedAt ? Date.now() - new Date(startedAt).getTime() : 0,
+    };
+
     const { data: scoreEntry, error: scoreError } = await serviceClient
       .from("llmwatch_scores")
-      .insert({
-        client_id: clientId,
-        week_start: weekStart,
-        score: runScore.scoreGeo,
-        score_by_llm: scoreByLlm,
-        score_by_lang: { fr: runScore.scoreGeo },
-        citation_rate: Math.round(citationRate * 100) / 100,
-        score_presence: runScore.scorePresence,
-        score_exactitude: runScore.scoreExactitude,
-        score_sentiment: runScore.scoreSentiment,
-        score_recommendation: runScore.scoreRecommendation,
-        total_responses: responseScores.length,
-        total_cost_usd: Math.round(totalCost * 10000) / 10000,
-        duration_ms: startedAt ? Date.now() - new Date(startedAt).getTime() : 0,
-      })
+      .upsert(scorePayload, { onConflict: "client_id,week_start" })
       .select()
       .single();
 
