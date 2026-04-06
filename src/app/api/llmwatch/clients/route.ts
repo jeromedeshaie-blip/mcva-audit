@@ -48,18 +48,28 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
   const body = await request.json();
-  const { name, sector, location, plan, contact_email, queries, competitors } = body;
+  const { name, sector, location, plan, contact_email, monitoring_frequency, queries, competitors } = body;
 
   if (!name || !contact_email) {
     return NextResponse.json({ error: "Nom et email requis" }, { status: 400 });
   }
+
+  const validFrequencies = ["weekly", "monthly", "quarterly", "manual"];
+  const frequency = validFrequencies.includes(monitoring_frequency) ? monitoring_frequency : "manual";
 
   const serviceClient = createServiceClient();
 
   // Create client
   const { data: client, error: clientError } = await serviceClient
     .from("llmwatch_clients")
-    .insert({ name, sector, location, plan: plan || "business", contact_email })
+    .insert({
+      name,
+      sector,
+      location,
+      plan: plan || "business",
+      contact_email,
+      monitoring_frequency: frequency,
+    })
     .select()
     .single();
 

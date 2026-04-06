@@ -202,6 +202,12 @@ export async function runMonitoring(
       })
       .eq("id", scoreId);
 
+    // Update last_monitored_at on successful completion
+    await supabase
+      .from("llmwatch_clients")
+      .update({ last_monitored_at: new Date().toISOString() })
+      .eq("id", clientId);
+
     return {
       scoreId,
       clientId,
@@ -237,7 +243,7 @@ export async function runAllMonitoring(): Promise<MonitoringResult[]> {
 
   const { data: clients, error } = await supabase
     .from("llmwatch_clients")
-    .select("id, name")
+    .select("id, name, monitoring_frequency, last_monitored_at")
     .eq("active", true);
 
   if (error || !clients?.length) {
@@ -246,12 +252,34 @@ export async function runAllMonitoring(): Promise<MonitoringResult[]> {
   }
 
   const results: MonitoringResult[] = [];
+  const now = new Date();
 
   for (const client of clients) {
+    // Skip manual clients — they are only triggered via the UI
+    if (client.monitoring_frequency === "manual") {
+      console.log(`[GEO Monitor] ${client.name}: frequence manuelle, skip`);
+      continue;
+    }
+
+    // Check if enough time has passed since last monitoring
+    if (client.last_monitored_at && !isDueForMonitoring(client.monitoring_frequency, client.last_monitored_at, now)) {
+      console.log(`[GEO Monitor] ${client.name}: pas encore du (freq: ${client.monitoring_frequency})`);
+      continue;
+    }
+
     console.log(`[GEO Monitor] Debut monitoring: ${client.name}`);
     try {
       const result = await runMonitoring(client.id);
       results.push(result);
+
+      // Update last_monitored_at
+      if (result.status === "completed") {
+        await supabase
+          .from("llmwatch_clients")
+          .update({ last_monitored_at: now.toISOString() })
+          .eq("id", client.id);
+      }
+
       console.log(
         `[GEO Monitor] ${client.name}: Score GEO = ${result.score.scoreGeo}/100 (${result.status})`
       );
@@ -263,6 +291,28 @@ export async function runAllMonitoring(): Promise<MonitoringResult[]> {
   }
 
   return results;
+}
+
+/** Check if a client is due for monitoring based on their frequency setting */
+function isDueForMonitoring(
+  frequency: string,
+  lastMonitoredAt: string,
+  now: Date
+): boolean {
+  const last = new Date(lastMonitoredAt);
+  const diffMs = now.getTime() - last.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+  switch (frequency) {
+    case "weekly":
+      return diffDays >= 6; // 6 days to allow some flexibility
+    case "monthly":
+      return diffDays >= 28;
+    case "quarterly":
+      return diffDays >= 85;
+    default:
+      return false;
+  }
 }
 
 // ============================================================

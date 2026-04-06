@@ -7,9 +7,30 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { LlmWatchClient } from "@/lib/llmwatch/types";
+import type { LlmWatchClient, MonitoringFrequency } from "@/lib/llmwatch/types";
 
 type ViewState = "list" | "create";
+
+const FREQUENCY_OPTIONS: { value: MonitoringFrequency; label: string; description: string }[] = [
+  { value: "weekly", label: "Hebdomadaire", description: "Chaque lundi" },
+  { value: "monthly", label: "Mensuel", description: "1x par mois" },
+  { value: "quarterly", label: "Trimestriel", description: "1x par trimestre" },
+  { value: "manual", label: "Manuel", description: "Sur demande uniquement" },
+];
+
+const FREQUENCY_LABELS: Record<MonitoringFrequency, string> = {
+  weekly: "Hebdo",
+  monthly: "Mensuel",
+  quarterly: "Trimestriel",
+  manual: "Manuel",
+};
+
+const FREQUENCY_COLORS: Record<MonitoringFrequency, "default" | "secondary" | "outline" | "destructive"> = {
+  weekly: "default",
+  monthly: "secondary",
+  quarterly: "outline",
+  manual: "outline",
+};
 
 export default function LlmWatchAdminPage() {
   const router = useRouter();
@@ -24,8 +45,13 @@ export default function LlmWatchAdminPage() {
   const [contactEmail, setContactEmail] = useState("");
   const [queriesFr, setQueriesFr] = useState("");
   const [competitorsText, setCompetitorsText] = useState("");
+  const [frequency, setFrequency] = useState<MonitoringFrequency>("manual");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Manual trigger state
+  const [runningClientId, setRunningClientId] = useState<string | null>(null);
+  const [runResult, setRunResult] = useState<{ clientId: string; message: string; success: boolean } | null>(null);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -72,6 +98,7 @@ export default function LlmWatchAdminPage() {
           sector,
           location,
           contact_email: contactEmail,
+          monitoring_frequency: frequency,
           queries,
           competitors,
         }),
@@ -89,12 +116,52 @@ export default function LlmWatchAdminPage() {
       setContactEmail("");
       setQueriesFr("");
       setCompetitorsText("");
+      setFrequency("manual");
       setView("list");
       fetchClients();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleRunMonitoring = async (clientId: string, clientName: string) => {
+    setRunningClientId(clientId);
+    setRunResult(null);
+
+    try {
+      const res = await fetch("/api/monitoring/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setRunResult({
+          clientId,
+          message: `Score GEO: ${data.scoreGeo}/100 (${data.duration})`,
+          success: true,
+        });
+        // Refresh client list to show updated last_monitored_at
+        fetchClients();
+      } else {
+        setRunResult({
+          clientId,
+          message: data.error || "Erreur inconnue",
+          success: false,
+        });
+      }
+    } catch (err) {
+      setRunResult({
+        clientId,
+        message: err instanceof Error ? err.message : "Erreur reseau",
+        success: false,
+      });
+    } finally {
+      setRunningClientId(null);
     }
   };
 
@@ -149,6 +216,28 @@ export default function LlmWatchAdminPage() {
                     onChange={(e) => setLocation(e.target.value)}
                     placeholder="Lausanne, Suisse"
                   />
+                </div>
+              </div>
+
+              {/* Frequency selector */}
+              <div className="space-y-2">
+                <Label>Frequence de monitoring</Label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {FREQUENCY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setFrequency(opt.value)}
+                      className={`rounded-lg border-2 p-3 text-left transition-all ${
+                        frequency === opt.value
+                          ? "border-primary bg-primary/5"
+                          : "border-muted hover:border-muted-foreground/30"
+                      }`}
+                    >
+                      <div className="font-medium text-sm">{opt.label}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{opt.description}</div>
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -214,22 +303,56 @@ export default function LlmWatchAdminPage() {
           {clients.map((c) => (
             <Card
               key={c.id}
-              className="cursor-pointer hover:border-primary/30 transition-colors"
-              onClick={() => router.push(`/llmwatch/dashboard/${c.id}`)}
+              className="hover:border-primary/30 transition-colors"
             >
-              <CardContent className="py-4 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold">{c.name}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {c.sector} — {c.location}
-                  </p>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div
+                    className="flex-1 cursor-pointer"
+                    onClick={() => router.push(`/llmwatch/dashboard/${c.id}`)}
+                  >
+                    <h3 className="font-semibold">{c.name}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {c.sector} — {c.location}
+                    </p>
+                    {c.last_monitored_at && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Dernier scan : {new Date(c.last_monitored_at).toLocaleDateString("fr-CH")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={FREQUENCY_COLORS[c.monitoring_frequency || "monthly"]}>
+                      {FREQUENCY_LABELS[c.monitoring_frequency || "monthly"]}
+                    </Badge>
+                    <Badge variant={c.active ? "default" : "secondary"}>
+                      {c.active ? "Actif" : "Inactif"}
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={runningClientId === c.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRunMonitoring(c.id, c.name);
+                      }}
+                    >
+                      {runningClientId === c.id ? "Analyse..." : "Lancer maintenant"}
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={c.active ? "default" : "secondary"}>
-                    {c.active ? "Actif" : "Inactif"}
-                  </Badge>
-                  <Badge variant="outline">{c.plan}</Badge>
-                </div>
+                {/* Show run result for this client */}
+                {runResult && runResult.clientId === c.id && (
+                  <div
+                    className={`mt-2 text-sm px-3 py-2 rounded-md ${
+                      runResult.success
+                        ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
+                        : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+                    }`}
+                  >
+                    {runResult.message}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

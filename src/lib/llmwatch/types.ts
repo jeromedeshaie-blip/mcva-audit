@@ -1,6 +1,7 @@
 export type LlmProvider = "openai" | "anthropic" | "perplexity" | "gemini";
 export type Lang = "fr" | "de" | "en";
 export type ClientPlan = "starter" | "business" | "enterprise";
+export type MonitoringFrequency = "weekly" | "monthly" | "quarterly" | "manual";
 
 export interface LlmWatchClient {
   id: string;
@@ -10,6 +11,8 @@ export interface LlmWatchClient {
   plan: ClientPlan;
   contact_email: string;
   active: boolean;
+  monitoring_frequency: MonitoringFrequency;
+  last_monitored_at: string | null;
   created_at: string;
   updated_at: string;
 }

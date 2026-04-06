@@ -12,11 +12,14 @@ import { CitationBlock } from "@/components/llmwatch/CitationBlock";
 import { AlertBadge } from "@/components/llmwatch/AlertBadge";
 import { RecommendationCard } from "@/components/llmwatch/RecommendationCard";
 import { QueryResultsTable } from "@/components/llmwatch/QueryResultsTable";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import type {
   LlmWatchScore,
   LlmWatchCitation,
   LlmWatchAlert,
   LlmWatchRecommendation,
+  MonitoringFrequency,
 } from "@/lib/llmwatch/types";
 
 export default function LlmWatchDashboard({
@@ -35,6 +38,31 @@ export default function LlmWatchDashboard({
   const [detailedResults, setDetailedResults] = useState<any[]>([]);
   const [queries, setQueries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [runMessage, setRunMessage] = useState<{ text: string; success: boolean } | null>(null);
+
+  const handleRunMonitoring = async () => {
+    setRunning(true);
+    setRunMessage(null);
+    try {
+      const res = await fetch("/api/monitoring/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRunMessage({ text: `Score GEO : ${data.scoreGeo}/100 (${data.duration})`, success: true });
+        fetchData(); // refresh dashboard
+      } else {
+        setRunMessage({ text: data.error || "Erreur inconnue", success: false });
+      }
+    } catch (err) {
+      setRunMessage({ text: err instanceof Error ? err.message : "Erreur reseau", success: false });
+    } finally {
+      setRunning(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -149,14 +177,43 @@ export default function LlmWatchDashboard({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">
-          {client?.name || "Client"} — LLM Watch
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          {client?.sector} — {client?.location}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">
+            {client?.name || "Client"} — LLM Watch
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {client?.sector} / GEO — {client?.location}
+          </p>
+          {client?.last_monitored_at && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Dernier scan : {new Date(client.last_monitored_at).toLocaleDateString("fr-CH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">
+            {({ weekly: "Hebdo", monthly: "Mensuel", quarterly: "Trimestriel", manual: "Manuel" } as Record<string, string>)[client?.monitoring_frequency || "manual"] || "Manuel"}
+          </Badge>
+          <Button
+            onClick={handleRunMonitoring}
+            disabled={running}
+          >
+            {running ? "Analyse en cours..." : "Lancer l'analyse"}
+          </Button>
+        </div>
       </div>
+
+      {/* Run result feedback */}
+      {runMessage && (
+        <div className={`text-sm px-4 py-3 rounded-md ${
+          runMessage.success
+            ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
+            : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+        }`}>
+          {runMessage.text}
+        </div>
+      )}
 
       {/* Score cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
