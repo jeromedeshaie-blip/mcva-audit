@@ -2,9 +2,10 @@
 // Retourne la liste des queries actives d'un client + infos client pour le scoring
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
+  // Auth check with user client
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Non authentifie" }, { status: 401 });
@@ -12,14 +13,17 @@ export async function GET(request: NextRequest) {
   const clientId = request.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId requis" }, { status: 400 });
 
+  // Use service client to bypass RLS
+  const serviceClient = createServiceClient();
+
   // Fetch client info + active queries in parallel
   const [clientRes, queriesRes] = await Promise.all([
-    supabase
+    serviceClient
       .from("llmwatch_clients")
       .select("id, name, domain, brand_keywords")
       .eq("id", clientId)
       .single(),
-    supabase
+    serviceClient
       .from("llmwatch_queries")
       .select("id, text_fr, category")
       .eq("client_id", clientId)
