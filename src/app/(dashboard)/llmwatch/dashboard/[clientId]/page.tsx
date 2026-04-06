@@ -39,28 +39,101 @@ export default function LlmWatchDashboard({
   const [queries, setQueries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [runProgress, setRunProgress] = useState<{
+    current: number;
+    total: number;
+    currentQuery: string;
+    errors: string[];
+  } | null>(null);
   const [runMessage, setRunMessage] = useState<{ text: string; success: boolean } | null>(null);
 
   const handleRunMonitoring = async () => {
     setRunning(true);
     setRunMessage(null);
+    setRunProgress(null);
+
+    const startedAt = new Date().toISOString();
+
     try {
-      const res = await fetch("/api/monitoring/run", {
+      // Step 1: Fetch queries list
+      const queriesRes = await fetch(`/api/monitoring/queries?clientId=${clientId}`);
+      if (!queriesRes.ok) {
+        throw new Error("Impossible de charger les requetes");
+      }
+      const { queries: queryList, client: clientInfo } = await queriesRes.json();
+
+      if (!queryList?.length) {
+        setRunMessage({ text: "Aucune requete active pour ce client", success: false });
+        setRunning(false);
+        return;
+      }
+
+      const brandKeywords = clientInfo.brand_keywords || [clientInfo.name, clientInfo.domain];
+      const errors: string[] = [];
+
+      // Step 2: Run each query sequentially (each call ~5-10s, 4 LLMs in parallel)
+      for (let i = 0; i < queryList.length; i++) {
+        const q = queryList[i];
+        setRunProgress({
+          current: i + 1,
+          total: queryList.length,
+          currentQuery: q.text_fr.length > 60 ? q.text_fr.slice(0, 57) + "..." : q.text_fr,
+          errors,
+        });
+
+        try {
+          const res = await fetch("/api/monitoring/run-single", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              clientId,
+              queryId: q.id,
+              queryText: q.text_fr,
+              brandKeywords,
+            }),
+            signal: AbortSignal.timeout(45000), // 45s safety timeout
+          });
+
+          const data = await res.json();
+          if (!data.success) {
+            errors.push(`Q${i + 1}: ${data.error}`);
+          }
+        } catch (err) {
+          errors.push(`Q${i + 1}: ${err instanceof Error ? err.message : "Erreur"}`);
+        }
+
+        // Small delay between queries to respect rate limits
+        if (i < queryList.length - 1) {
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+
+      // Step 3: Finalize — aggregate scores
+      setRunProgress((prev) => prev ? { ...prev, currentQuery: "Calcul du Score GEO..." } : null);
+
+      const finalRes = await fetch("/api/monitoring/finalize-score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId }),
+        body: JSON.stringify({ clientId, startedAt }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setRunMessage({ text: `Score GEO : ${data.scoreGeo}/100 (${data.duration})`, success: true });
+
+      const finalData = await finalRes.json();
+
+      if (finalData.success) {
+        const errText = errors.length > 0 ? ` (${errors.length} erreur${errors.length > 1 ? "s" : ""})` : "";
+        setRunMessage({
+          text: `Score GEO : ${finalData.scoreGeo}/100 — Presence ${finalData.breakdown.presence} | Exactitude ${finalData.breakdown.exactitude} | Sentiment ${finalData.breakdown.sentiment} | Recommandation ${finalData.breakdown.recommendation}${errText}`,
+          success: true,
+        });
         fetchData(); // refresh dashboard
       } else {
-        setRunMessage({ text: data.error || "Erreur inconnue", success: false });
+        setRunMessage({ text: finalData.error || "Erreur de finalisation", success: false });
       }
     } catch (err) {
       setRunMessage({ text: err instanceof Error ? err.message : "Erreur reseau", success: false });
     } finally {
       setRunning(false);
+      setRunProgress(null);
     }
   };
 
@@ -204,8 +277,38 @@ export default function LlmWatchDashboard({
         </div>
       </div>
 
+      {/* Progress bar during analysis */}
+      {runProgress && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium">
+                Requete {runProgress.current}/{runProgress.total}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {Math.round((runProgress.current / runProgress.total) * 100)}%
+              </span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2.5 mb-2">
+              <div
+                className="bg-primary h-2.5 rounded-full transition-all duration-500"
+                style={{ width: `${(runProgress.current / runProgress.total) * 100}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground truncate">
+              {runProgress.currentQuery}
+            </p>
+            {runProgress.errors.length > 0 && (
+              <p className="text-xs text-destructive mt-1">
+                {runProgress.errors.length} erreur{runProgress.errors.length > 1 ? "s" : ""}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Run result feedback */}
-      {runMessage && (
+      {runMessage && !runProgress && (
         <div className={`text-sm px-4 py-3 rounded-md ${
           runMessage.success
             ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
