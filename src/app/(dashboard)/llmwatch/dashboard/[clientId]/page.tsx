@@ -268,6 +268,14 @@ export default function LlmWatchDashboard({
           <Badge variant="outline">
             {({ weekly: "Hebdo", monthly: "Mensuel", quarterly: "Trimestriel", manual: "Manuel" } as Record<string, string>)[client?.monitoring_frequency || "manual"] || "Manuel"}
           </Badge>
+          {latestScore && (
+            <Button
+              variant="outline"
+              onClick={() => window.open(`/api/llmwatch/pdf?clientId=${clientId}&format=pdf`, "_blank")}
+            >
+              Exporter PDF
+            </Button>
+          )}
           <Button
             onClick={handleRunMonitoring}
             disabled={running}
