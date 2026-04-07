@@ -65,21 +65,35 @@ export async function POST(request: NextRequest) {
     // Calculer le Score GEO global
     const runScore = computeRunScore(responseScores);
 
-    // Per-LLM breakdown
-    const scoreByLlm: Record<string, number> = {};
+    // LW-003: Per-LLM breakdown — only LLMs that actually responded
+    // LLMs with 0 responses are marked "unavailable", not scored as 0
+    const scoreByLlm: Record<string, number | null> = {};
     const llmGroups: Record<string, ResponseScore[]> = {};
     for (const rs of responseScores) {
       if (!llmGroups[rs.provider]) llmGroups[rs.provider] = [];
       llmGroups[rs.provider].push(rs);
     }
+    // Mark all monitored LLMs
+    const ALL_LLMS = ["openai", "anthropic", "perplexity", "gemini"];
+    for (const llm of ALL_LLMS) {
+      if (llmGroups[llm] && llmGroups[llm].length > 0) {
+        scoreByLlm[llm] = computeRunScore(llmGroups[llm]).scoreGeo;
+      } else {
+        scoreByLlm[llm] = null; // unavailable
+      }
+    }
+    // Include any extra LLMs that responded
     for (const [llm, scores] of Object.entries(llmGroups)) {
-      scoreByLlm[llm] = computeRunScore(scores).scoreGeo;
+      if (!scoreByLlm.hasOwnProperty(llm)) {
+        scoreByLlm[llm] = computeRunScore(scores).scoreGeo;
+      }
     }
 
-    // Citation rate
-    const citationRate = responseScores.length > 0
+    // LW-002: Citation rate — always a ratio [0, 1], clamped for safety
+    const rawCitationRate = responseScores.length > 0
       ? responseScores.filter((r) => r.isBrandMentioned).length / responseScores.length
       : 0;
+    const citationRate = Math.max(0, Math.min(1, rawCitationRate));
 
     // Total cost
     const totalCost = responseScores.reduce((sum, r) => sum + r.costUsd, 0);

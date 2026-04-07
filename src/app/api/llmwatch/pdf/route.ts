@@ -60,6 +60,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // LW-001: refuse to generate report if no responses were analyzed
+    if (Number(latestScore.total_responses || 0) === 0) {
+      return NextResponse.json(
+        { error: "Donnees insuffisantes : 0 reponses analysees. Relancez l'analyse." },
+        { status: 400 }
+      );
+    }
+
     // Parse score_by_llm
     const scoreByLlm = latestScore.score_by_llm
       ? typeof latestScore.score_by_llm === "string"
@@ -81,16 +89,21 @@ export async function GET(request: NextRequest) {
 
     const latestResults = rawResults.filter((r: any) => r.collected_at >= cutoff);
 
-    const queryMap = new Map<string, any[]>();
+    // LW-006 fix: deduplicate — keep only latest result per (query, llm) pair
+    const queryMap = new Map<string, Map<string, any>>();
     for (const r of latestResults) {
       const qText = (r as any).llmwatch_queries?.text_fr || "Requete inconnue";
-      if (!queryMap.has(qText)) queryMap.set(qText, []);
-      queryMap.get(qText)!.push(r);
+      if (!queryMap.has(qText)) queryMap.set(qText, new Map());
+      const llmMap = queryMap.get(qText)!;
+      // Keep the latest (first in desc order) per LLM
+      if (!llmMap.has(r.llm)) {
+        llmMap.set(r.llm, r);
+      }
     }
 
-    const queryResults = Array.from(queryMap.entries()).map(([queryText, results]) => ({
+    const queryResults = Array.from(queryMap.entries()).map(([queryText, llmMap]) => ({
       queryText,
-      results: results.map((r: any) => ({
+      results: Array.from(llmMap.values()).map((r: any) => ({
         llm: r.llm,
         cited: r.cited || false,
         isRecommended: r.is_recommended || false,

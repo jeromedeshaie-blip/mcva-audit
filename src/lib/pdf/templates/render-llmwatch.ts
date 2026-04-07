@@ -24,7 +24,7 @@ export interface LlmWatchPdfData {
     totalResponses: number;
     weekStart: string;
   };
-  scoreByLlm: Record<string, number>;
+  scoreByLlm: Record<string, number | null>; // LW-003: null = unavailable
   scoreByLang: Record<string, number> | null;
   history: { weekStart: string; score: number }[];
   queryResults: {
@@ -165,7 +165,7 @@ function renderCover(data: LlmWatchPdfData): string {
       <div class="cover-domains">
         ${esc(data.client.domain)}<br>
         Semaine du ${formatDate(data.score.weekStart)}<br>
-        ${data.score.totalResponses} reponses analysees sur ${Object.keys(data.scoreByLlm).length} LLMs
+        ${data.score.totalResponses} reponses analysees sur ${Object.values(data.scoreByLlm).filter((v) => v !== null).length}/${Object.keys(data.scoreByLlm).length} LLMs
       </div>
       <div class="cover-footer">
         <div class="cover-footer-left">MCVA Consulting SA &mdash; mcva.ch</div>
@@ -193,7 +193,7 @@ function renderScorePage(data: LlmWatchPdfData): string {
     </div>
     <div style="text-align: center; font-size: 10pt; color: var(--gray-600); margin-bottom: 24px;">
       Niveau : <strong>${geoTier(s.scoreGeo)}</strong> &mdash;
-      Taux de citation : <strong>${Math.round(s.citationRate * 100)}%</strong>
+      Taux de citation : <strong>${Math.min(100, Math.round(s.citationRate * 100))}%</strong>
     </div>
 
     <!-- 4 components -->
@@ -216,16 +216,22 @@ function renderScorePage(data: LlmWatchPdfData): string {
       </div>
     </div>
 
-    <!-- Score by LLM -->
+    <!-- Score by LLM (LW-003: show unavailable LLMs explicitly) -->
     <h2>Score par LLM</h2>
+    <p style="font-size: 7.5pt; color: var(--gray-600); margin-bottom: 8px;">
+      Score moyen sur ${Object.values(data.scoreByLlm).filter((v) => v !== null).length} LLMs disponibles sur ${Object.keys(data.scoreByLlm).length} monitores
+    </p>
     <div class="llm-grid">
       ${Object.entries(data.scoreByLlm)
-        .sort(([, a], [, b]) => b - a)
+        .sort(([, a], [, b]) => (b ?? -1) - (a ?? -1))
         .map(
           ([llm, score]) => `
-        <div class="llm-card">
+        <div class="llm-card" ${score === null ? 'style="opacity: 0.5; border-style: dashed;"' : ""}>
           <span class="llm-name">${esc(LLM_LABELS[llm] || llm)}</span>
-          <span class="llm-score ${scoreClass(score)}">${Math.round(score)}</span>
+          ${score !== null
+            ? `<span class="llm-score ${scoreClass(score)}">${Math.round(score)}</span>`
+            : `<span style="font-size: 8pt; color: var(--gray-400);">Non disponible</span>`
+          }
         </div>`
         )
         .join("")}

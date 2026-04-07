@@ -235,16 +235,43 @@ export async function queryLLM(
  * Interroge les 4 LLMs en parallèle pour une même requête.
  * Retourne les résultats disponibles (les erreurs sont loguées, pas bloquantes).
  */
+/**
+ * LW-004 fix: Log individual LLM failures instead of swallowing them.
+ * Returns both successful responses and error details for monitoring.
+ */
+export interface QueryAllResult {
+  responses: LLMResponse[];
+  errors: { provider: string; error: string }[];
+}
+
 export async function queryAllLLMs(query: string): Promise<LLMResponse[]> {
   const results = await Promise.allSettled(
-    PROVIDERS.map((p) => queryLLM(p.name, query))
+    PROVIDERS.filter((p) => p.apiKey).map((p) => queryLLM(p.name, query))
   );
 
-  return results
-    .filter(
-      (r): r is PromiseFulfilledResult<LLMResponse> => r.status === "fulfilled"
-    )
-    .map((r) => r.value);
+  const responses: LLMResponse[] = [];
+  const errors: { provider: string; error: string }[] = [];
+
+  results.forEach((r, i) => {
+    const providerName = PROVIDERS.filter((p) => p.apiKey)[i]?.name || `unknown-${i}`;
+    if (r.status === "fulfilled") {
+      responses.push(r.value);
+    } else {
+      const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      errors.push({ provider: providerName, error: errMsg });
+      // LW-004: structured error logging instead of silent swallow
+      console.error(`[LLM-ERROR] ${providerName} failed for query "${query.slice(0, 80)}...": ${errMsg}`);
+    }
+  });
+
+  // LW-004: warn if a monitored LLM is completely missing (no API key)
+  const configuredProviders = PROVIDERS.filter((p) => p.apiKey).map((p) => p.name);
+  const missingProviders = PROVIDERS.filter((p) => !p.apiKey).map((p) => p.name);
+  if (missingProviders.length > 0) {
+    console.warn(`[LLM-WARN] Missing API keys for: ${missingProviders.join(", ")}`);
+  }
+
+  return responses;
 }
 
 export { PROVIDERS };

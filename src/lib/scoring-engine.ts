@@ -33,12 +33,14 @@ export interface ResponseScore {
 }
 
 export interface RunScore {
-  scoreGeo: number; // 0-100
+  scoreGeo: number; // 0-100 = sum of 4 components (single source of truth)
   scorePresence: number; // 0-25
   scoreExactitude: number; // 0-25
   scoreSentiment: number; // 0-25
   scoreRecommendation: number; // 0-25
   totalResponses: number;
+  llmsAvailable: number; // LW-003: how many LLMs actually responded
+  llmsMonitored: number; // LW-003: how many LLMs were queried
   responseScores: ResponseScore[];
 }
 
@@ -127,49 +129,33 @@ function analyzeSentiment(
     }
   }
 
+  // LW-005 fix: expanded signals with accent-free variants for FR matching
   const positiveSignals = [
-    "excellent",
-    "innovant",
-    "pionnier",
-    "unique",
-    "spécialisé",
-    "expertise",
-    "professionnel",
-    "fiable",
-    "performant",
-    "efficace",
-    "reconnu",
-    "qualité",
-    "confiance",
-    "premier",
-    "leader",
-    "outstanding",
-    "innovative",
-    "specialized",
-    "trusted",
-    "reliable",
-    "cutting-edge",
-    "state-of-the-art",
+    // French
+    "excellent", "innovant", "pionnier", "unique", "specialise", "spécialisé",
+    "expertise", "professionnel", "fiable", "performant", "efficace",
+    "reconnu", "qualite", "qualité", "confiance", "premier", "leader",
+    "remarquable", "solide", "competent", "compétent", "experimente", "expérimenté",
+    "repute", "réputé", "ideal", "idéal", "parfait", "impressionnant",
+    "privilegie", "privilégié", "apprecie", "apprécié", "renomme", "renommé",
+    "incontournable", "reference", "référence", "meilleur", "optimal",
+    "se distingue", "se demarque", "se démarque", "a la pointe", "de choix",
+    // English
+    "outstanding", "innovative", "specialized", "trusted", "reliable",
+    "cutting-edge", "state-of-the-art", "excellent", "recommended", "top",
+    "best", "leading", "premier", "superior", "renowned", "reputable",
   ];
 
   const negativeSignals = [
-    "méfiance",
-    "attention",
-    "risque",
-    "limité",
-    "manque",
-    "insuffisant",
-    "problème",
-    "difficulté",
-    "cher",
-    "coûteux",
-    "caution",
-    "limited",
-    "lacking",
-    "expensive",
-    "concern",
-    "drawback",
-    "weakness",
+    // French
+    "mefiance", "méfiance", "attention", "risque", "limite", "limité",
+    "manque", "insuffisant", "probleme", "problème", "difficulte", "difficulté",
+    "cher", "couteux", "coûteux", "mediocre", "médiocre", "decevant", "décevant",
+    "faible", "lacune", "obsolete", "obsolète", "critique", "defaut", "défaut",
+    "inconvenient", "inconvénient", "complexe", "opaque",
+    // English
+    "caution", "limited", "lacking", "expensive", "concern", "drawback",
+    "weakness", "poor", "mediocre", "disappointing", "outdated", "risky",
   ];
 
   let positiveCount = 0;
@@ -183,11 +169,14 @@ function analyzeSentiment(
   }
 
   const total = positiveCount + negativeCount;
-  if (total === 0) return { sentiment: "neutral", score: 0.1 };
+  // LW-005 fix: if brand is mentioned but no signals found, lean slightly positive
+  // (being mentioned at all is mildly positive)
+  if (total === 0) return { sentiment: "positive", score: 0.15 };
 
   const score = (positiveCount - negativeCount) / total;
+  // LW-005 fix: lower thresholds from ±0.2 to ±0.1 to reduce neutral bias
   const sentiment =
-    score > 0.2 ? "positive" : score < -0.2 ? "negative" : "neutral";
+    score > 0.1 ? "positive" : score < -0.1 ? "negative" : "neutral";
 
   return { sentiment, score: Math.max(-1, Math.min(1, score)) };
 }
@@ -314,7 +303,15 @@ export function scoreResponse(
 // SCORING GLOBAL D'UN RUN (agrégation)
 // ============================================================
 
+/**
+ * LW-001: Single source of truth — scoreGeo = sum(4 components).
+ * LW-003: Track available vs monitored LLMs explicitly.
+ */
 export function computeRunScore(responseScores: ResponseScore[]): RunScore {
+  // Count distinct LLMs
+  const allLlms = new Set(responseScores.map((r) => r.provider));
+  const MONITORED_LLMS = 4; // openai, anthropic, perplexity, gemini
+
   const total = responseScores.length;
   if (total === 0) {
     return {
@@ -324,25 +321,24 @@ export function computeRunScore(responseScores: ResponseScore[]): RunScore {
       scoreSentiment: 0,
       scoreRecommendation: 0,
       totalResponses: 0,
+      llmsAvailable: 0,
+      llmsMonitored: MONITORED_LLMS,
       responseScores: [],
     };
   }
 
   // --- Présence (0-25) ---
-  // % de réponses qui mentionnent la marque, ramené sur 25
   const mentionRate =
     responseScores.filter((r) => r.isBrandMentioned).length / total;
   const scorePresence = Math.round(mentionRate * 25 * 100) / 100;
 
   // --- Exactitude (0-25) ---
-  // Parmi les réponses qui mentionnent la marque, % factuellement correctes
   const mentionedResponses = responseScores.filter((r) => r.isBrandMentioned);
   const checkedResponses = mentionedResponses.filter(
     (r) => r.isFactuallyAccurate !== null
   );
   let scoreExactitude: number;
   if (checkedResponses.length === 0) {
-    // Si pas de facts à vérifier, score basé sur la profondeur de l'info
     const avgInfo =
       mentionedResponses.reduce((sum, r) => sum + r.citeInformation, 0) /
       Math.max(mentionedResponses.length, 1);
@@ -355,19 +351,17 @@ export function computeRunScore(responseScores: ResponseScore[]): RunScore {
   }
 
   // --- Sentiment (0-25) ---
-  // Moyenne des scores de sentiment, normalisée de [-1,1] vers [0,25]
   const avgSentiment =
     responseScores.reduce((sum, r) => sum + r.sentimentScore, 0) / total;
   const scoreSentiment =
     Math.round(((avgSentiment + 1) / 2) * 25 * 100) / 100;
 
   // --- Recommandation (0-25) ---
-  // % de réponses qui recommandent activement, ramené sur 25
   const recoRate =
     responseScores.filter((r) => r.isRecommended).length / total;
   const scoreRecommendation = Math.round(recoRate * 25 * 100) / 100;
 
-  // --- Score GEO™ global ---
+  // --- Score GEO™ global = SOMME des 4 composantes (LW-001: single source of truth) ---
   const scoreGeo =
     Math.round(
       (scorePresence + scoreExactitude + scoreSentiment + scoreRecommendation) *
@@ -381,6 +375,8 @@ export function computeRunScore(responseScores: ResponseScore[]): RunScore {
     scoreSentiment,
     scoreRecommendation,
     totalResponses: total,
+    llmsAvailable: allLlms.size,
+    llmsMonitored: MONITORED_LLMS,
     responseScores,
   };
 }

@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { LlmWatchClient, MonitoringFrequency } from "@/lib/llmwatch/types";
 
-type ViewState = "list" | "create";
+type ViewState = "list" | "create" | "queries";
 
 const FREQUENCY_OPTIONS: { value: MonitoringFrequency; label: string; description: string }[] = [
   { value: "weekly", label: "Hebdomadaire", description: "Chaque lundi" },
@@ -52,6 +52,15 @@ export default function LlmWatchAdminPage() {
   // Manual trigger state
   const [runningClientId, setRunningClientId] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<{ clientId: string; message: string; success: boolean } | null>(null);
+
+  // LW-008: Query editor state
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
+  const [editingClientName, setEditingClientName] = useState("");
+  const [existingQueries, setExistingQueries] = useState<{ id: string; text_fr: string; active: boolean }[]>([]);
+  const [newQueriesText, setNewQueriesText] = useState("");
+  const [replaceExisting, setReplaceExisting] = useState(false);
+  const [importingQueries, setImportingQueries] = useState(false);
+  const [queryMessage, setQueryMessage] = useState<{ text: string; success: boolean } | null>(null);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -164,6 +173,175 @@ export default function LlmWatchAdminPage() {
       setRunningClientId(null);
     }
   };
+
+  // LW-008: Open query editor for a client
+  const openQueryEditor = async (clientId: string, clientName: string) => {
+    setEditingClientId(clientId);
+    setEditingClientName(clientName);
+    setNewQueriesText("");
+    setReplaceExisting(false);
+    setQueryMessage(null);
+
+    // Fetch existing queries
+    try {
+      const res = await fetch(`/api/llmwatch/queries?clientId=${clientId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExistingQueries(data.queries || []);
+      }
+    } catch {
+      setExistingQueries([]);
+    }
+
+    setView("queries");
+  };
+
+  const handleImportQueries = async () => {
+    if (!editingClientId || !newQueriesText.trim()) return;
+    setImportingQueries(true);
+    setQueryMessage(null);
+
+    const queries = newQueriesText
+      .split("\n")
+      .map((q) => q.trim())
+      .filter((q) => q.length > 0);
+
+    try {
+      const res = await fetch("/api/llmwatch/queries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: editingClientId,
+          queries,
+          replaceExisting,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setQueryMessage({
+          text: `${data.imported} requetes importees${data.replaced ? " (ancien set desactive)" : ""}`,
+          success: true,
+        });
+        setNewQueriesText("");
+        // Refresh queries list
+        const refetch = await fetch(`/api/llmwatch/queries?clientId=${editingClientId}`);
+        if (refetch.ok) {
+          const d = await refetch.json();
+          setExistingQueries(d.queries || []);
+        }
+      } else {
+        setQueryMessage({ text: data.error || "Erreur", success: false });
+      }
+    } catch (err) {
+      setQueryMessage({ text: err instanceof Error ? err.message : "Erreur", success: false });
+    } finally {
+      setImportingQueries(false);
+    }
+  };
+
+  const handleDeleteQuery = async (queryId: string) => {
+    try {
+      await fetch("/api/llmwatch/queries", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queryId }),
+      });
+      setExistingQueries((prev) => prev.filter((q) => q.id !== queryId));
+    } catch {
+      // ignore
+    }
+  };
+
+  // LW-008: Query editor view
+  if (view === "queries") {
+    const activeQueries = existingQueries.filter((q) => q.active);
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Requetes — {editingClientName}</h1>
+          <Button variant="outline" onClick={() => setView("list")}>
+            Retour
+          </Button>
+        </div>
+
+        {/* Existing queries */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Requetes actives ({activeQueries.length})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activeQueries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucune requete active.</p>
+            ) : (
+              <div className="space-y-2">
+                {activeQueries.map((q, i) => (
+                  <div key={q.id} className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground min-w-[24px]">{i + 1}.</span>
+                    <span className="flex-1 font-mono text-xs">{q.text_fr}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive h-6 px-2"
+                      onClick={() => handleDeleteQuery(q.id)}
+                    >
+                      Supprimer
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Import new queries */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Importer des requetes</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nouvelles requetes (une par ligne)</Label>
+              <textarea
+                className="w-full min-h-[160px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={newQueriesText}
+                onChange={(e) => setNewQueriesText(e.target.value)}
+                placeholder={`Quelle est la meilleure fiduciaire a Lausanne ?\nA qui confier ma comptabilite en Suisse romande ?`}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="replaceExisting"
+                checked={replaceExisting}
+                onChange={(e) => setReplaceExisting(e.target.checked)}
+                className="rounded"
+              />
+              <Label htmlFor="replaceExisting" className="text-sm font-normal">
+                Remplacer les requetes existantes (desactive l&apos;ancien set)
+              </Label>
+            </div>
+
+            {queryMessage && (
+              <p className={`text-sm font-medium ${queryMessage.success ? "text-green-600" : "text-destructive"}`}>
+                {queryMessage.text}
+              </p>
+            )}
+
+            <Button
+              onClick={handleImportQueries}
+              disabled={importingQueries || !newQueriesText.trim()}
+            >
+              {importingQueries ? "Import..." : `Importer ${newQueriesText.split("\n").filter((l) => l.trim()).length} requetes`}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (view === "create") {
     return (
@@ -328,6 +506,16 @@ export default function LlmWatchAdminPage() {
                     <Badge variant={c.active ? "default" : "secondary"}>
                       {c.active ? "Actif" : "Inactif"}
                     </Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openQueryEditor(c.id, c.name);
+                      }}
+                    >
+                      Requetes
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
