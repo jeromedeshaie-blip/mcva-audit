@@ -7,7 +7,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { queryAllLLMs } from "@/lib/llm-providers";
 import { scoreResponse, type ResponseScore } from "@/lib/scoring-engine";
 
-export const maxDuration = 30; // largement suffisant pour 4 LLMs en parallele
+export const maxDuration = 60; // 4 LLMs parallel + 3-4 judge calls parallel
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,25 +37,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Scorer chaque reponse (async — LLM-as-judge)
-    const scored: ResponseScore[] = [];
+    // Score all LLM responses in parallel (each calls LLM-as-judge independently)
+    const serviceClient = createServiceClient();
+    const resolvedBrandName = brandName || brandKeywords[0] || "";
+    const resolvedLang = language as "fr" | "de" | "en";
+
+    const scored = await Promise.all(
+      llmResponses.map((llmResponse) =>
+        scoreResponse(llmResponse, resolvedBrandName, brandKeywords, competitors, knownFacts, resolvedLang)
+      )
+    );
+
     let totalCost = 0;
 
-    const serviceClient = createServiceClient();
+    // Persist all scored results to DB (sequential inserts are fine — fast)
+    for (const rs of scored) {
+      totalCost += rs.costUsd + 0.012; // judge cost
 
-    for (const llmResponse of llmResponses) {
-      const rs = await scoreResponse(
-        llmResponse,
-        brandName || brandKeywords[0] || "",
-        brandKeywords,
-        competitors,
-        knownFacts,
-        language as "fr" | "de" | "en"
-      );
-      scored.push(rs);
-      totalCost += llmResponse.costUsd + 0.012; // judge cost
-
-      // Persister dans llmwatch_raw_results
       await serviceClient.from("llmwatch_raw_results").insert({
         client_id: clientId,
         query_id: queryId,

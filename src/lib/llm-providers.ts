@@ -46,8 +46,8 @@ const PROVIDERS: ProviderConfig[] = [
   },
   {
     name: "gemini",
-    // Pinned to Gemini 2.5 Pro preview snapshot
-    model: "gemini-2.5-pro-preview-03-25",
+    // Pinned to Gemini 2.5 Pro GA (stable, no preview suffix)
+    model: "gemini-2.5-pro",
     apiKey: process.env.GEMINI_API_KEY!,
     endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
   },
