@@ -3,13 +3,14 @@
 // Tables: llmwatch_clients, llmwatch_queries, llmwatch_scores, llmwatch_raw_results
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { queryAllLLMs, type LLMResponse } from "./llm-providers";
+import { queryAllLLMs, MODEL_SNAPSHOT_VERSION, PROVIDERS, type LLMResponse } from "./llm-providers";
 import {
   scoreResponse,
   computeRunScore,
   type ResponseScore,
   type RunScore,
 } from "./scoring-engine";
+import { LLMWATCH_RUN_CONFIG, type QualityLevel } from "./constants";
 
 // ============================================================
 // SUPABASE CLIENT (server-side, service_role)
@@ -37,6 +38,8 @@ interface Query {
   id: string;
   client_id: string;
   text_fr: string;
+  text_de: string | null;
+  text_en: string | null;
   category: string;
 }
 
@@ -65,10 +68,12 @@ interface MonitoringResult {
  * 6. Persiste tout en base
  */
 export async function runMonitoring(
-  clientId: string
+  clientId: string,
+  level: QualityLevel = "standard"
 ): Promise<MonitoringResult> {
   const supabase = getSupabase();
   const startTime = Date.now();
+  const runConfig = LLMWATCH_RUN_CONFIG[level];
 
   // 1. Recuperer le client
   const { data: client, error: clientError } = await supabase
@@ -84,10 +89,11 @@ export async function runMonitoring(
   // 2. Recuperer les queries actives
   const { data: queries, error: queriesError } = await supabase
     .from("llmwatch_queries")
-    .select("id, client_id, text_fr, category")
+    .select("id, client_id, text_fr, text_de, text_en, category")
     .eq("client_id", clientId)
     .eq("active", true)
-    .order("sort_order");
+    .order("sort_order")
+    .limit(runConfig.maxQueries);
 
   if (queriesError || !queries?.length) {
     throw new Error(`Aucune query active pour le client ${client.name}`);
@@ -114,59 +120,96 @@ export async function runMonitoring(
   const scoreId = scoreEntry.id;
 
   try {
-    // 4. Interroger les LLMs pour chaque query
-    const allResponseScores: ResponseScore[] = [];
+    // 4. Setup
     let totalCost = 0;
 
-    // Fetch competitors from client's sector peers (if available)
-    const competitors: string[] = [];
+    // Fetch competitors from database
+    const competitors = (
+      await supabase
+        .from("llmwatch_competitors")
+        .select("name")
+        .eq("client_id", clientId)
+        .eq("active", true)
+    ).data?.map((c) => c.name) || [];
 
-    for (const query of queries as Query[]) {
-      // Interroger les 4 LLMs en parallele
-      const llmResponses = await queryAllLLMs(query.text_fr);
+    // Fetch known facts for factual accuracy (if llmwatch_facts table exists)
+    const knownFacts = await getClientFacts(clientId, supabase);
 
-      // Scorer chaque reponse
-      for (const llmResponse of llmResponses) {
-        const scored = scoreResponse(
-          llmResponse,
-          client.brand_keywords || [client.name, client.domain],
-          competitors
-        );
+    const brandAliases = client.brand_keywords || [client.name, client.domain];
 
-        allResponseScores.push(scored);
-        totalCost += llmResponse.costUsd;
+    // 5. Run REPETITIONS times (1 for eco/standard, 3 for premium/ultra)
+    const allRunScores: RunScore[] = [];
 
-        // Persister la reponse dans llmwatch_raw_results
-        await supabase.from("llmwatch_raw_results").insert({
-          client_id: clientId,
-          query_id: query.id,
-          llm: scored.provider,
-          lang: "fr",
-          response_raw: scored.response,
-          cited: scored.isBrandMentioned,
-          snippet: scored.response.slice(0, 500),
-          collected_at: new Date().toISOString(),
-          is_recommended: scored.isRecommended,
-          sentiment: scored.sentiment,
-          sentiment_score: scored.sentimentScore,
-          competitor_mentions: scored.competitorMentions,
-          citation_sources: scored.citationSources,
-          cite_credibility: scored.citeCredibility,
-          cite_information: scored.citeInformation,
-          cite_transparency: scored.citeTransparency,
-          cite_expertise: scored.citeExpertise,
-          tokens_used: scored.tokensUsed,
-          latency_ms: scored.latencyMs,
-          cost_usd: scored.costUsd,
-        });
+    const LANGUAGES = ["fr", "de", "en"] as const;
+
+    for (let rep = 0; rep < runConfig.repetitions; rep++) {
+      const repResponseScores: ResponseScore[] = [];
+
+      for (const query of queries as Query[]) {
+        for (const lang of LANGUAGES) {
+          const queryText = query[`text_${lang}` as keyof Query] as string | null;
+          if (!queryText) continue; // skip languages without text
+
+          // Interroger les 4 LLMs en parallele
+          const llmResponses = await queryAllLLMs(queryText);
+
+          // Scorer chaque reponse (async — calls LLM-as-judge)
+          for (const llmResponse of llmResponses) {
+            const scored = await scoreResponse(
+              llmResponse,
+              client.name,
+              brandAliases,
+              competitors,
+              knownFacts,
+              lang
+            );
+
+            repResponseScores.push(scored);
+            totalCost += llmResponse.costUsd + 0.012; // judge cost estimate
+
+            // Persister la reponse dans llmwatch_raw_results
+            await supabase.from("llmwatch_raw_results").insert({
+              client_id: clientId,
+              query_id: query.id,
+              llm: scored.provider,
+              lang,
+              response_raw: scored.response,
+              cited: scored.isBrandMentioned,
+              snippet: scored.response.slice(0, 500),
+              collected_at: new Date().toISOString(),
+              is_recommended: scored.isRecommended,
+              sentiment: scored.sentiment,
+              sentiment_score: scored.sentimentScore,
+              competitor_mentions: scored.competitorMentions,
+              citation_sources: scored.citationSources,
+              tokens_used: scored.tokensUsed,
+              latency_ms: scored.latencyMs,
+              cost_usd: scored.costUsd,
+              model_version: scored.model,
+            });
+          }
+
+          // Pause entre les queries pour respecter les rate limits
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
       }
 
-      // Pause entre les queries pour respecter les rate limits
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      allRunScores.push(computeRunScore(repResponseScores));
     }
 
-    // 5. Calculer le Score GEO global
-    const runScore = computeRunScore(allResponseScores);
+    // 6. Average across repetitions
+    const meanScore = allRunScores.reduce((s, r) => s + r.scoreGeo, 0) / allRunScores.length;
+    const variance = allRunScores.length > 1
+      ? allRunScores.reduce((s, r) => s + Math.pow(r.scoreGeo - meanScore, 2), 0) / allRunScores.length
+      : 0;
+    const stddev = Math.sqrt(variance);
+
+    // Use the LAST run as the canonical responseScores for per-LLM breakdown
+    const finalRunScore = allRunScores[allRunScores.length - 1];
+    const allResponseScores = finalRunScore.responseScores;
+
+    // Override scoreGeo with the mean across repetitions
+    finalRunScore.scoreGeo = Math.round(meanScore * 100) / 100;
 
     // Compute per-LLM breakdown
     const scoreByLlm: Record<string, number> = {};
@@ -179,26 +222,63 @@ export async function runMonitoring(
       scoreByLlm[llm] = computeRunScore(scores).scoreGeo;
     }
 
-    // Citation rate
+    // Compute per-language breakdown from raw_results
+    // Query recently stored results to get per-lang scores
+    const scoreByLang: Record<string, number> = { fr: finalRunScore.scoreGeo };
+    const { data: langResults } = await supabase
+      .from("llmwatch_raw_results")
+      .select("lang, cited, is_recommended, sentiment_score")
+      .eq("client_id", clientId)
+      .gte("collected_at", new Date(startTime).toISOString());
+    if (langResults && langResults.length > 0) {
+      const langGroups: Record<string, typeof langResults> = {};
+      for (const r of langResults) {
+        const l = r.lang || "fr";
+        if (!langGroups[l]) langGroups[l] = [];
+        langGroups[l].push(r);
+      }
+      for (const [lang, results] of Object.entries(langGroups)) {
+        if (results.length === 0) continue;
+        const mentionRate = results.filter((r) => r.cited).length / results.length;
+        const recoRate = results.filter((r) => r.is_recommended).length / results.length;
+        const avgSent = results.reduce((s, r) => s + (r.sentiment_score || 0), 0) / results.length;
+        // Simplified per-lang score: same 4-component formula
+        const langScore = Math.round(
+          (mentionRate * 25 + 12.5 + ((avgSent + 1) / 2) * 25 + recoRate * 25) * 100
+        ) / 100;
+        scoreByLang[lang] = langScore;
+      }
+    }
+
+    // Citation rate (from last run)
     const citationRate = allResponseScores.length > 0
       ? allResponseScores.filter((r) => r.isBrandMentioned).length / allResponseScores.length
       : 0;
 
-    // 6. Mettre a jour le score entry
+    // 7. Mettre a jour le score entry
+    const modelsUsed = Object.fromEntries(
+      PROVIDERS.map((p) => [p.name, p.model])
+    );
+
     await supabase
       .from("llmwatch_scores")
       .update({
-        score: runScore.scoreGeo,
+        score: finalRunScore.scoreGeo,
         score_by_llm: scoreByLlm,
-        score_by_lang: { fr: runScore.scoreGeo }, // single lang for now
+        score_by_lang: scoreByLang,
         citation_rate: Math.round(citationRate * 100) / 100,
-        score_presence: runScore.scorePresence,
-        score_exactitude: runScore.scoreExactitude,
-        score_sentiment: runScore.scoreSentiment,
-        score_recommendation: runScore.scoreRecommendation,
-        total_responses: allResponseScores.length,
+        score_presence: finalRunScore.scorePresence,
+        score_exactitude: finalRunScore.scoreExactitude,
+        score_sentiment: finalRunScore.scoreSentiment,
+        score_recommendation: finalRunScore.scoreRecommendation,
+        total_responses: allResponseScores.length * runConfig.repetitions,
         total_cost_usd: Math.round(totalCost * 10000) / 10000,
         duration_ms: Date.now() - startTime,
+        model_snapshot_version: MODEL_SNAPSHOT_VERSION,
+        models_used: modelsUsed,
+        run_level: level,
+        run_count: runConfig.repetitions,
+        score_stddev: runConfig.repetitions > 1 ? Math.round(stddev * 100) / 100 : null,
       })
       .eq("id", scoreId);
 
@@ -212,7 +292,7 @@ export async function runMonitoring(
       scoreId,
       clientId,
       clientName: client.name,
-      score: runScore,
+      score: finalRunScore,
       status: "completed",
       duration: Date.now() - startTime,
       totalCost,
@@ -406,6 +486,28 @@ export async function getLLMBreakdown(clientId: string, weekStart?: string) {
 // ============================================================
 // HELPERS
 // ============================================================
+
+/**
+ * Fetch known facts for a client from llmwatch_facts table.
+ * Returns undefined if no facts exist (gracefully handles missing table).
+ */
+async function getClientFacts(
+  clientId: string,
+  supabase: SupabaseClient
+): Promise<Record<string, string> | undefined> {
+  try {
+    const { data } = await supabase
+      .from("llmwatch_facts")
+      .select("fact_key, fact_value")
+      .eq("client_id", clientId)
+      .eq("active", true);
+    if (!data || data.length === 0) return undefined;
+    return Object.fromEntries(data.map((f) => [f.fact_key, f.fact_value]));
+  } catch {
+    // Table may not exist yet — graceful fallback
+    return undefined;
+  }
+}
 
 /** Get Monday of current week as YYYY-MM-DD */
 function getWeekStart(): string {

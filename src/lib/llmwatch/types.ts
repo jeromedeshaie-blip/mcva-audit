@@ -35,6 +35,11 @@ export interface LlmWatchScore {
   score_by_llm: Record<LlmProvider, number>;
   score_by_lang: Record<Lang, number>;
   citation_rate: number;
+  model_snapshot_version: string | null;
+  models_used: Record<LlmProvider, string> | null;
+  run_level: string | null;
+  run_count: number;
+  score_stddev: number | null;
   created_at: string;
 }
 
