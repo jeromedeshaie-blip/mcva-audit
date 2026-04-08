@@ -1256,4 +1256,70 @@ export const runUltraAudit = inngest.createFunction(
   }
 );
 
-export const functions = [runExpressAudit, runFullAudit, runUltraAudit, runBenchmarkBatch];
+// ============================================================
+// LLM Watch — Scheduled monitoring
+// ============================================================
+
+/**
+ * LLM Watch scheduler — runs every Monday at 06:00 UTC.
+ * Iterates all active clients with non-manual frequency,
+ * checks if they are due for monitoring, and triggers runs.
+ */
+export const runLlmWatchScheduler = inngest.createFunction(
+  {
+    id: "llmwatch-scheduler",
+    name: "LLM Watch Scheduler",
+    triggers: [
+      { cron: "0 6 * * 1" }, // Every Monday at 06:00 UTC
+      { event: "llmwatch/scheduler.trigger" }, // Manual trigger via event
+    ],
+  },
+  async ({ step }) => {
+    const results = await step.run("run-all-monitoring", async () => {
+      // Dynamic import to avoid circular deps
+      const { runAllMonitoring } = await import("@/lib/monitor");
+      return runAllMonitoring();
+    });
+
+    return {
+      status: "completed",
+      clientsProcessed: results.length,
+      results: results.map((r) => ({
+        client: r.clientName,
+        score: r.score.scoreGeo,
+        status: r.status,
+      })),
+    };
+  }
+);
+
+/**
+ * LLM Watch — single client monitoring triggered via event.
+ * Used by the admin UI "Lancer maintenant" button.
+ */
+export const runLlmWatchClient = inngest.createFunction(
+  {
+    id: "llmwatch-run-client",
+    name: "LLM Watch Run Client",
+    triggers: [{ event: "llmwatch/client.run" }],
+  },
+  async ({ event, step }) => {
+    const { clientId, level } = event.data as { clientId: string; level?: string };
+
+    const result = await step.run("run-monitoring", async () => {
+      const { runMonitoring } = await import("@/lib/monitor");
+      const { QualityLevel } = await import("@/lib/constants") as any;
+      return runMonitoring(clientId, (level || "standard") as any);
+    });
+
+    return {
+      status: result.status,
+      clientName: result.clientName,
+      scoreGeo: result.score.scoreGeo,
+      duration: result.duration,
+      totalCost: result.totalCost,
+    };
+  }
+);
+
+export const functions = [runExpressAudit, runFullAudit, runUltraAudit, runBenchmarkBatch, runLlmWatchScheduler, runLlmWatchClient];

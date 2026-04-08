@@ -1,8 +1,9 @@
 // src/lib/scoring-engine.ts
-// Moteur de scoring Score GEO™ propriétaire MCVA
+// Moteur de scoring Score GEO™ v2 — Uses LLM-as-judge from src/lib/judge.ts
 // 4 composantes : Présence (0-25) + Exactitude (0-25) + Sentiment (0-25) + Recommandation (0-25)
 
 import type { LLMResponse } from "./llm-providers";
+import { judgeResponse, type JudgeVerdict } from "./judge";
 
 export interface ResponseScore {
   // Identifiants
@@ -11,20 +12,18 @@ export interface ResponseScore {
   query: string;
   response: string;
 
-  // Scores composantes
+  // Judge-based scores
   isBrandMentioned: boolean;
+  brandMentionConfidence: number;
   isRecommended: boolean;
+  recommendationStrength: "explicit" | "implicit" | "none";
   isFactuallyAccurate: boolean | null;
+  factualClaims: JudgeVerdict["factualClaims"];
   sentiment: "positive" | "neutral" | "negative";
   sentimentScore: number; // -1.0 à 1.0
   citationSources: string[];
   competitorMentions: string[];
-
-  // CITE détaillé
-  citeCredibility: number;
-  citeInformation: number;
-  citeTransparency: number;
-  citeExpertise: number;
+  judgeReasoning: string;
 
   // Méta
   tokensUsed: number;
@@ -45,257 +44,57 @@ export interface RunScore {
 }
 
 // ============================================================
-// ANALYSE D'UNE RÉPONSE INDIVIDUELLE
+// SCORING D'UNE RÉPONSE (async — calls LLM-as-judge)
 // ============================================================
 
-/**
- * Analyse une réponse LLM pour détecter les mentions de marque.
- */
-function detectBrandMention(
-  response: string,
-  brandKeywords: string[]
-): boolean {
-  const lower = response.toLowerCase();
-  return brandKeywords.some((kw) => lower.includes(kw.toLowerCase()));
-}
-
-/**
- * Détecte si le LLM recommande activement la marque.
- * Cherche des patterns de recommandation explicite.
- */
-function detectRecommendation(
-  response: string,
-  brandKeywords: string[]
-): boolean {
-  const lower = response.toLowerCase();
-  const brandPresent = brandKeywords.some((kw) =>
-    lower.includes(kw.toLowerCase())
-  );
-  if (!brandPresent) return false;
-
-  const recoPatterns = [
-    "je recommande",
-    "je vous recommande",
-    "nous recommandons",
-    "recommandé",
-    "excellent choix",
-    "se distingue",
-    "leader",
-    "référence",
-    "incontournable",
-    "à considérer",
-    "mérite d'être",
-    "i recommend",
-    "highly recommended",
-    "top choice",
-    "stands out",
-    "worth considering",
-    "best option",
-    "premier choix",
-    "en tête",
-    "se démarque",
-    "spécialisé",
-    "expertise reconnue",
-  ];
-
-  return recoPatterns.some((p) => lower.includes(p));
-}
-
-/**
- * Analyse le sentiment de la réponse vis-à-vis de la marque.
- * Retourne un score entre -1.0 (très négatif) et 1.0 (très positif).
- */
-function analyzeSentiment(
-  response: string,
-  brandKeywords: string[]
-): { sentiment: "positive" | "neutral" | "negative"; score: number } {
-  const lower = response.toLowerCase();
-  const brandPresent = brandKeywords.some((kw) =>
-    lower.includes(kw.toLowerCase())
-  );
-
-  if (!brandPresent) {
-    return { sentiment: "neutral", score: 0 };
-  }
-
-  // Extraction du contexte autour des mentions de marque (±200 chars)
-  let brandContext = "";
-  for (const kw of brandKeywords) {
-    const idx = lower.indexOf(kw.toLowerCase());
-    if (idx >= 0) {
-      const start = Math.max(0, idx - 200);
-      const end = Math.min(lower.length, idx + kw.length + 200);
-      brandContext += lower.slice(start, end) + " ";
-    }
-  }
-
-  // LW-005 fix: expanded signals with accent-free variants for FR matching
-  const positiveSignals = [
-    // French
-    "excellent", "innovant", "pionnier", "unique", "specialise", "spécialisé",
-    "expertise", "professionnel", "fiable", "performant", "efficace",
-    "reconnu", "qualite", "qualité", "confiance", "premier", "leader",
-    "remarquable", "solide", "competent", "compétent", "experimente", "expérimenté",
-    "repute", "réputé", "ideal", "idéal", "parfait", "impressionnant",
-    "privilegie", "privilégié", "apprecie", "apprécié", "renomme", "renommé",
-    "incontournable", "reference", "référence", "meilleur", "optimal",
-    "se distingue", "se demarque", "se démarque", "a la pointe", "de choix",
-    // English
-    "outstanding", "innovative", "specialized", "trusted", "reliable",
-    "cutting-edge", "state-of-the-art", "excellent", "recommended", "top",
-    "best", "leading", "premier", "superior", "renowned", "reputable",
-  ];
-
-  const negativeSignals = [
-    // French
-    "mefiance", "méfiance", "attention", "risque", "limite", "limité",
-    "manque", "insuffisant", "probleme", "problème", "difficulte", "difficulté",
-    "cher", "couteux", "coûteux", "mediocre", "médiocre", "decevant", "décevant",
-    "faible", "lacune", "obsolete", "obsolète", "critique", "defaut", "défaut",
-    "inconvenient", "inconvénient", "complexe", "opaque",
-    // English
-    "caution", "limited", "lacking", "expensive", "concern", "drawback",
-    "weakness", "poor", "mediocre", "disappointing", "outdated", "risky",
-  ];
-
-  let positiveCount = 0;
-  let negativeCount = 0;
-
-  for (const signal of positiveSignals) {
-    if (brandContext.includes(signal)) positiveCount++;
-  }
-  for (const signal of negativeSignals) {
-    if (brandContext.includes(signal)) negativeCount++;
-  }
-
-  const total = positiveCount + negativeCount;
-  // LW-005 fix: if brand is mentioned but no signals found, lean slightly positive
-  // (being mentioned at all is mildly positive)
-  if (total === 0) return { sentiment: "positive", score: 0.15 };
-
-  const score = (positiveCount - negativeCount) / total;
-  // LW-005 fix: lower thresholds from ±0.2 to ±0.1 to reduce neutral bias
-  const sentiment =
-    score > 0.1 ? "positive" : score < -0.1 ? "negative" : "neutral";
-
-  return { sentiment, score: Math.max(-1, Math.min(1, score)) };
-}
-
-/**
- * Vérifie l'exactitude factuelle basique.
- * Compare les infos de la réponse avec les facts connus du projet.
- */
-function checkFactualAccuracy(
-  response: string,
-  brandKeywords: string[],
-  knownFacts?: Record<string, string>
-): boolean | null {
-  if (!knownFacts || Object.keys(knownFacts).length === 0) return null;
-
-  const lower = response.toLowerCase();
-  const brandPresent = brandKeywords.some((kw) =>
-    lower.includes(kw.toLowerCase())
-  );
-  if (!brandPresent) return null;
-
-  let correctCount = 0;
-  let checkedCount = 0;
-
-  for (const [key, value] of Object.entries(knownFacts)) {
-    if (lower.includes(key.toLowerCase())) {
-      checkedCount++;
-      if (lower.includes(value.toLowerCase())) {
-        correctCount++;
-      }
-    }
-  }
-
-  if (checkedCount === 0) return null;
-  return correctCount / checkedCount >= 0.5;
-}
-
-/**
- * Détecte les concurrents mentionnés dans la réponse.
- */
-function detectCompetitors(
-  response: string,
-  competitors: string[]
-): string[] {
-  const lower = response.toLowerCase();
-  return competitors.filter((c) => lower.includes(c.toLowerCase()));
-}
-
-/**
- * Extrait les URLs citées dans la réponse.
- */
-function extractCitations(response: string): string[] {
-  const urlRegex = /https?:\/\/[^\s\)]+/g;
-  const matches = response.match(urlRegex) || [];
-  return [...new Set(matches)];
-}
-
-// ============================================================
-// SCORING D'UNE RÉPONSE
-// ============================================================
-
-export function scoreResponse(
+export async function scoreResponse(
   llmResponse: LLMResponse,
-  brandKeywords: string[],
+  brandName: string,
+  brandAliases: string[],
   competitors: string[],
-  knownFacts?: Record<string, string>
-): ResponseScore {
-  const { response, provider, model, query, tokensUsed, latencyMs, costUsd } =
-    llmResponse;
+  knownFacts: Record<string, string> | undefined,
+  language: "fr" | "de" | "en"
+): Promise<ResponseScore> {
+  const verdict = await judgeResponse({
+    response: llmResponse.response,
+    brandName,
+    brandAliases,
+    competitors,
+    knownFacts,
+    language,
+  });
 
-  const isBrandMentioned = detectBrandMention(response, brandKeywords);
-  const isRecommended = detectRecommendation(response, brandKeywords);
-  const { sentiment, score: sentimentScore } = analyzeSentiment(
-    response,
-    brandKeywords
+  // Compute factual accuracy from claims
+  const verifiableClaims = verdict.factualClaims.filter(
+    (c) => c.verdict !== "unverifiable"
   );
-  const isFactuallyAccurate = checkFactualAccuracy(
-    response,
-    brandKeywords,
-    knownFacts
-  );
-  const competitorMentions = detectCompetitors(response, competitors);
-  const citationSources = extractCitations(response);
-
-  // Scoring CITE (0-25 chacun, total contribue aux composantes globales)
-  const citeCredibility = isBrandMentioned
-    ? citationSources.length > 0
-      ? 20
-      : 12
-    : 0;
-  const citeInformation = isBrandMentioned
-    ? response.length > 500
-      ? 22
-      : response.length > 200
-        ? 15
-        : 8
-    : 0;
-  const citeTransparency = citationSources.length > 0 ? 18 : 5;
-  const citeExpertise = isRecommended ? 22 : isBrandMentioned ? 10 : 0;
+  let isFactuallyAccurate: boolean | null = null;
+  if (verifiableClaims.length > 0) {
+    const correctRatio =
+      verifiableClaims.filter((c) => c.verdict === "correct").length /
+      verifiableClaims.length;
+    isFactuallyAccurate = correctRatio >= 0.75;
+  }
 
   return {
-    provider,
-    model,
-    query,
-    response,
-    isBrandMentioned,
-    isRecommended,
+    provider: llmResponse.provider,
+    model: llmResponse.model,
+    query: llmResponse.query,
+    response: llmResponse.response,
+    isBrandMentioned: verdict.isBrandMentioned,
+    brandMentionConfidence: verdict.brandMentionConfidence,
+    isRecommended: verdict.isRecommended,
+    recommendationStrength: verdict.recommendationStrength,
     isFactuallyAccurate,
-    sentiment,
-    sentimentScore,
-    citationSources,
-    competitorMentions,
-    citeCredibility,
-    citeInformation,
-    citeTransparency,
-    citeExpertise,
-    tokensUsed,
-    latencyMs,
-    costUsd,
+    factualClaims: verdict.factualClaims,
+    sentiment: verdict.sentiment,
+    sentimentScore: verdict.sentimentScore,
+    citationSources: verdict.citationUrls,
+    competitorMentions: verdict.competitorMentions,
+    judgeReasoning: verdict.reasoningNotes,
+    tokensUsed: llmResponse.tokensUsed,
+    latencyMs: llmResponse.latencyMs,
+    costUsd: llmResponse.costUsd,
   };
 }
 
@@ -308,7 +107,6 @@ export function scoreResponse(
  * LW-003: Track available vs monitored LLMs explicitly.
  */
 export function computeRunScore(responseScores: ResponseScore[]): RunScore {
-  // Count distinct LLMs
   const allLlms = new Set(responseScores.map((r) => r.provider));
   const MONITORED_LLMS = 4; // openai, anthropic, perplexity, gemini
 
@@ -327,41 +125,45 @@ export function computeRunScore(responseScores: ResponseScore[]): RunScore {
     };
   }
 
-  // --- Présence (0-25) ---
+  // --- Présence (0-25): Mention Rate × 25 ---
   const mentionRate =
     responseScores.filter((r) => r.isBrandMentioned).length / total;
   const scorePresence = Math.round(mentionRate * 25 * 100) / 100;
 
-  // --- Exactitude (0-25) ---
-  const mentionedResponses = responseScores.filter((r) => r.isBrandMentioned);
-  const checkedResponses = mentionedResponses.filter(
-    (r) => r.isFactuallyAccurate !== null
-  );
+  // --- Exactitude (0-25): based on verifiable claims ---
+  const mentioned = responseScores.filter((r) => r.isBrandMentioned);
+  const checked = mentioned.filter((r) => r.isFactuallyAccurate !== null);
   let scoreExactitude: number;
-  if (checkedResponses.length === 0) {
-    const avgInfo =
-      mentionedResponses.reduce((sum, r) => sum + r.citeInformation, 0) /
-      Math.max(mentionedResponses.length, 1);
-    scoreExactitude = Math.round((avgInfo / 25) * 25 * 100) / 100;
+  if (checked.length === 0) {
+    // Fallback: use brandMentionConfidence as proxy
+    const avgConfidence =
+      mentioned.length > 0
+        ? mentioned.reduce((s, r) => s + r.brandMentionConfidence, 0) /
+          mentioned.length
+        : 0;
+    scoreExactitude = Math.round(avgConfidence * 25 * 100) / 100;
   } else {
     const accuracyRate =
-      checkedResponses.filter((r) => r.isFactuallyAccurate).length /
-      checkedResponses.length;
+      checked.filter((r) => r.isFactuallyAccurate).length / checked.length;
     scoreExactitude = Math.round(accuracyRate * 25 * 100) / 100;
   }
 
-  // --- Sentiment (0-25) ---
+  // --- Sentiment (0-25): average -1..+1 mapped to 0..25 ---
   const avgSentiment =
-    responseScores.reduce((sum, r) => sum + r.sentimentScore, 0) / total;
+    responseScores.reduce((s, r) => s + r.sentimentScore, 0) / total;
   const scoreSentiment =
     Math.round(((avgSentiment + 1) / 2) * 25 * 100) / 100;
 
-  // --- Recommandation (0-25) ---
-  const recoRate =
-    responseScores.filter((r) => r.isRecommended).length / total;
-  const scoreRecommendation = Math.round(recoRate * 25 * 100) / 100;
+  // --- Recommandation (0-25): explicit counts more than implicit ---
+  const recoScore =
+    responseScores.reduce((s, r) => {
+      if (r.recommendationStrength === "explicit") return s + 1;
+      if (r.recommendationStrength === "implicit") return s + 0.5;
+      return s;
+    }, 0) / total;
+  const scoreRecommendation = Math.round(recoScore * 25 * 100) / 100;
 
-  // --- Score GEO™ global = SOMME des 4 composantes (LW-001: single source of truth) ---
+  // --- Score GEO™ global = SOMME des 4 composantes ---
   const scoreGeo =
     Math.round(
       (scorePresence + scoreExactitude + scoreSentiment + scoreRecommendation) *

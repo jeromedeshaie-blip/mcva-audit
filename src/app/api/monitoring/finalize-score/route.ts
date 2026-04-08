@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { computeRunScore, type ResponseScore } from "@/lib/scoring-engine";
+import { MODEL_SNAPSHOT_VERSION, PROVIDERS } from "@/lib/llm-providers";
 
 export const maxDuration = 15;
 
@@ -43,20 +44,20 @@ export async function POST(request: NextRequest) {
     // Convertir en ResponseScore pour le scoring engine
     const responseScores: ResponseScore[] = rawResults.map((r: any) => ({
       provider: r.llm,
-      model: r.llm,
+      model: r.model_version || r.llm,
       query: "",
       response: r.response_raw || "",
       isBrandMentioned: r.cited || false,
+      brandMentionConfidence: r.cited ? 0.9 : 0.1,
       isRecommended: r.is_recommended || false,
+      recommendationStrength: r.is_recommended ? "implicit" as const : "none" as const,
       isFactuallyAccurate: null,
+      factualClaims: [],
       sentiment: r.sentiment || "neutral",
       sentimentScore: r.sentiment_score || 0,
       citationSources: r.citation_sources || [],
       competitorMentions: r.competitor_mentions || [],
-      citeCredibility: r.cite_credibility || 0,
-      citeInformation: r.cite_information || 0,
-      citeTransparency: r.cite_transparency || 0,
-      citeExpertise: r.cite_expertise || 0,
+      judgeReasoning: "",
       tokensUsed: r.tokens_used || 0,
       latencyMs: r.latency_ms || 0,
       costUsd: r.cost_usd || 0,
@@ -104,6 +105,11 @@ export async function POST(request: NextRequest) {
     const diff = now.getDate() - day + (day === 0 ? -6 : 1);
     const weekStart = new Date(now.setDate(diff)).toISOString().split("T")[0];
 
+    // Build models_used map from PROVIDERS config
+    const modelsUsed = Object.fromEntries(
+      PROVIDERS.map((p) => [p.name, p.model])
+    );
+
     // Upsert score entry (same client + same week → update)
     const scorePayload = {
       client_id: clientId,
@@ -119,6 +125,8 @@ export async function POST(request: NextRequest) {
       total_responses: responseScores.length,
       total_cost_usd: Math.round(totalCost * 10000) / 10000,
       duration_ms: startedAt ? Date.now() - new Date(startedAt).getTime() : 0,
+      model_snapshot_version: MODEL_SNAPSHOT_VERSION,
+      models_used: modelsUsed,
     };
 
     const { data: scoreEntry, error: scoreError } = await serviceClient

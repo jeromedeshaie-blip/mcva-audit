@@ -264,4 +264,49 @@ export const QUALITY_CONFIG = {
   },
 } as const;
 
-export type QualityConfig = typeof QUALITY_CONFIG[keyof typeof QUALITY_CONFIG];
+export type QualityLevel = keyof typeof QUALITY_CONFIG;
+export type QualityConfig = typeof QUALITY_CONFIG[QualityLevel];
+
+// ============================================================
+// LLM WATCH — Run level config per quality level
+// ============================================================
+
+export const LLMWATCH_RUN_CONFIG = {
+  eco: {
+    maxQueries: 10,
+    llmCount: 4,
+    repetitions: 1,
+    estimatedCostUsd: 0.5,
+    label: "Eco — 10 prompts × 1 run (~$0.50)",
+  },
+  standard: {
+    maxQueries: 20,
+    llmCount: 4,
+    repetitions: 1,
+    estimatedCostUsd: 1.5,
+    label: "Standard — 20 prompts × 1 run (~$1.50)",
+  },
+  premium: {
+    maxQueries: 30,
+    llmCount: 4,
+    repetitions: 3,
+    estimatedCostUsd: 6.0,
+    label: "Premium — 30 prompts × 3 runs (~$6.00)",
+  },
+  ultra: {
+    maxQueries: 50,
+    llmCount: 4,
+    repetitions: 3,
+    estimatedCostUsd: 12.0,
+    label: "Ultra — 50 prompts × 3 runs (~$12.00)",
+  },
+  dryrun: {
+    maxQueries: 5,
+    llmCount: 0,
+    repetitions: 1,
+    estimatedCostUsd: 0,
+    label: "Dry Run — mock",
+  },
+} as const;
+
+export type LlmWatchRunConfig = typeof LLMWATCH_RUN_CONFIG[QualityLevel];

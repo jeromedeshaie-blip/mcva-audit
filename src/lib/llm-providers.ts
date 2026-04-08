@@ -18,28 +18,36 @@ interface ProviderConfig {
   endpoint: string;
 }
 
+// Bump this date string every time you update model snapshots below.
+// Stored alongside each score for reproducibility audit trails.
+export const MODEL_SNAPSHOT_VERSION = "2026-04-08";
+
 const PROVIDERS: ProviderConfig[] = [
   {
     name: "openai",
-    model: "gpt-4o",
+    // Pinned snapshot — update manually every 6 months after testing
+    model: "gpt-4o-2024-11-20",
     apiKey: process.env.OPENAI_API_KEY!,
     endpoint: "https://api.openai.com/v1/chat/completions",
   },
   {
     name: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    // Pinned snapshot — claude-sonnet-4-5-20250929 is latest stable
+    model: "claude-sonnet-4-5-20250929",
     apiKey: process.env.ANTHROPIC_API_KEY!,
     endpoint: "https://api.anthropic.com/v1/messages",
   },
   {
     name: "perplexity",
+    // Perplexity does not offer dated snapshots — limitation documented
     model: "sonar-pro",
     apiKey: process.env.PERPLEXITY_API_KEY!,
     endpoint: "https://api.perplexity.ai/chat/completions",
   },
   {
     name: "gemini",
-    model: "gemini-2.0-flash",
+    // Pinned to Gemini 2.5 Pro preview snapshot
+    model: "gemini-2.5-pro-preview-03-25",
     apiKey: process.env.GEMINI_API_KEY!,
     endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
   },
@@ -194,10 +202,10 @@ function estimateCost(
   outputTokens: number = 0
 ): number {
   const rates: Record<string, { input: number; output: number }> = {
-    openai: { input: 2.5 / 1e6, output: 10 / 1e6 },      // GPT-4o
-    anthropic: { input: 3 / 1e6, output: 15 / 1e6 },      // Sonnet
+    openai: { input: 2.5 / 1e6, output: 10 / 1e6 },      // GPT-4o-2024-11-20
+    anthropic: { input: 3 / 1e6, output: 15 / 1e6 },      // Claude Sonnet 4.5
     perplexity: { input: 3 / 1e6, output: 15 / 1e6 },     // Sonar Pro
-    gemini: { input: 0.075 / 1e6, output: 0.3 / 1e6 },    // Flash
+    gemini: { input: 1.25 / 1e6, output: 10 / 1e6 },      // Gemini 2.5 Pro
   };
   const rate = rates[provider] || { input: 0, output: 0 };
   return inputTokens * rate.input + outputTokens * rate.output;
