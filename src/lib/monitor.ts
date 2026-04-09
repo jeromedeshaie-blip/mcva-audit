@@ -99,19 +99,27 @@ export async function runMonitoring(
     throw new Error(`Aucune query active pour le client ${client.name}`);
   }
 
-  // 3. Creer l'entree score (llmwatch_scores) pour cette semaine
+  // 3. Reserve l'entree score (llmwatch_scores) pour cette semaine
+  // Uses RPC with ON CONFLICT DO UPDATE to handle re-runs within same week
   const weekStart = getWeekStart();
   const { data: scoreEntry, error: scoreError } = await supabase
-    .from("llmwatch_scores")
-    .insert({
-      client_id: clientId,
-      week_start: weekStart,
-      score: 0, // sera mis a jour
-      citation_rate: 0,
-      total_responses: queries.length * 4,
-    })
-    .select()
-    .single();
+    .rpc("upsert_weekly_score", {
+      p_client_id: clientId,
+      p_week_start: weekStart,
+      p_score: 0,
+      p_score_by_llm: {},
+      p_score_by_lang: {},
+      p_citation_rate: 0,
+      p_score_presence: 0,
+      p_score_exactitude: 0,
+      p_score_sentiment: 0,
+      p_score_recommendation: 0,
+      p_total_responses: queries.length * 4,
+      p_total_cost_usd: 0,
+      p_duration_ms: 0,
+      p_model_snapshot_version: MODEL_SNAPSHOT_VERSION,
+      p_models_used: {},
+    });
 
   if (scoreError || !scoreEntry) {
     throw new Error(`Impossible de creer le score: ${scoreError?.message}`);

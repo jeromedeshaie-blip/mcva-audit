@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
 
     if (rawError || !rawResults?.length) {
       return NextResponse.json(
-        { error: "Aucun resultat a agreger", detail: rawError?.message },
+        { error: "[finalize-v4-rpc] Aucun resultat a agreger", detail: rawError?.message, since },
         { status: 400 }
       );
     }
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
 
     if (scoreError) {
       return NextResponse.json(
-        { error: "Impossible de creer le score", detail: scoreError.message },
+        { error: "[finalize-v4-rpc] Score error", detail: scoreError.message },
         { status: 500 }
       );
     }
