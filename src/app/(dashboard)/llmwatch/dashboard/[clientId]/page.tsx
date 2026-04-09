@@ -60,7 +60,7 @@ export default function LlmWatchDashboard({
       if (!queriesRes.ok) {
         throw new Error("Impossible de charger les requetes");
       }
-      const { queries: queryList, client: clientInfo } = await queriesRes.json();
+      const { queries: queryList, client: clientInfo, competitors: clientCompetitors, knownFacts: clientFacts } = await queriesRes.json();
 
       if (!queryList?.length) {
         setRunMessage({ text: "Aucune requete active pour ce client", success: false });
@@ -69,6 +69,7 @@ export default function LlmWatchDashboard({
       }
 
       const brandKeywords = clientInfo.brand_keywords || [clientInfo.name, clientInfo.domain];
+      const brandName = clientInfo.name;
       const errors: string[] = [];
 
       // Step 2: Run each query sequentially (each call ~5-10s, 4 LLMs in parallel)
@@ -89,7 +90,11 @@ export default function LlmWatchDashboard({
               clientId,
               queryId: q.id,
               queryText: q.text_fr,
+              brandName,
               brandKeywords,
+              competitors: clientCompetitors || [],
+              knownFacts: clientFacts || {},
+              language: "fr",
             }),
             signal: AbortSignal.timeout(45000), // 45s safety timeout
           });

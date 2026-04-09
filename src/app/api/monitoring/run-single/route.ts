@@ -42,11 +42,22 @@ export async function POST(request: NextRequest) {
     const resolvedBrandName = brandName || brandKeywords[0] || "";
     const resolvedLang = language as "fr" | "de" | "en";
 
-    const scored = await Promise.all(
+    const results = await Promise.allSettled(
       llmResponses.map((llmResponse) =>
         scoreResponse(llmResponse, resolvedBrandName, brandKeywords, competitors, knownFacts, resolvedLang)
       )
     );
+
+    const scored: ResponseScore[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === "fulfilled") {
+        scored.push(r.value);
+      } else {
+        const provider = llmResponses[i].provider;
+        console.error(`[run-single] scoreResponse failed for ${provider}:`, r.reason);
+      }
+    }
 
     let totalCost = 0;
 
