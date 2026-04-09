@@ -127,37 +127,18 @@ export async function POST(request: NextRequest) {
       models_used: modelsUsed,
     };
 
-    // Check if a score row already exists for this client+week
-    const { data: existing } = await serviceClient
+    // Delete any existing score for this client+week, then insert fresh
+    await serviceClient
       .from("llmwatch_scores")
-      .select("id")
+      .delete()
       .eq("client_id", clientId)
-      .eq("week_start", weekStart)
-      .maybeSingle();
+      .eq("week_start", weekStart);
 
-    let scoreEntry;
-    let scoreError;
-
-    if (existing) {
-      // UPDATE existing row
-      const res = await serviceClient
-        .from("llmwatch_scores")
-        .update(scoreFields)
-        .eq("id", existing.id)
-        .select()
-        .single();
-      scoreEntry = res.data;
-      scoreError = res.error;
-    } else {
-      // INSERT new row
-      const res = await serviceClient
-        .from("llmwatch_scores")
-        .insert({ client_id: clientId, week_start: weekStart, ...scoreFields })
-        .select()
-        .single();
-      scoreEntry = res.data;
-      scoreError = res.error;
-    }
+    const { data: scoreEntry, error: scoreError } = await serviceClient
+      .from("llmwatch_scores")
+      .insert({ client_id: clientId, week_start: weekStart, ...scoreFields })
+      .select()
+      .single();
 
     if (scoreError) {
       return NextResponse.json(
