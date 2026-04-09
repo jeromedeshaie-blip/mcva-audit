@@ -127,18 +127,25 @@ export async function POST(request: NextRequest) {
       models_used: modelsUsed,
     };
 
-    // Delete any existing score for this client+week, then insert fresh
-    await serviceClient
-      .from("llmwatch_scores")
-      .delete()
-      .eq("client_id", clientId)
-      .eq("week_start", weekStart);
-
+    // Use PostgreSQL function for atomic upsert (ON CONFLICT DO UPDATE)
     const { data: scoreEntry, error: scoreError } = await serviceClient
-      .from("llmwatch_scores")
-      .insert({ client_id: clientId, week_start: weekStart, ...scoreFields })
-      .select()
-      .single();
+      .rpc("upsert_weekly_score", {
+        p_client_id: clientId,
+        p_week_start: weekStart,
+        p_score: scoreFields.score,
+        p_score_by_llm: scoreFields.score_by_llm,
+        p_score_by_lang: scoreFields.score_by_lang,
+        p_citation_rate: scoreFields.citation_rate,
+        p_score_presence: scoreFields.score_presence,
+        p_score_exactitude: scoreFields.score_exactitude,
+        p_score_sentiment: scoreFields.score_sentiment,
+        p_score_recommendation: scoreFields.score_recommendation,
+        p_total_responses: scoreFields.total_responses,
+        p_total_cost_usd: scoreFields.total_cost_usd,
+        p_duration_ms: scoreFields.duration_ms,
+        p_model_snapshot_version: scoreFields.model_snapshot_version,
+        p_models_used: scoreFields.models_used,
+      });
 
     if (scoreError) {
       return NextResponse.json(
