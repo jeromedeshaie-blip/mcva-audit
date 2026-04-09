@@ -111,9 +111,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Upsert score entry (same client + same week → update)
-    const scorePayload = {
-      client_id: clientId,
-      week_start: weekStart,
+    const scoreFields = {
       score: runScore.scoreGeo,
       score_by_llm: scoreByLlm,
       score_by_lang: { fr: runScore.scoreGeo },
@@ -129,11 +127,37 @@ export async function POST(request: NextRequest) {
       models_used: modelsUsed,
     };
 
-    const { data: scoreEntry, error: scoreError } = await serviceClient
+    // Check if a score row already exists for this client+week
+    const { data: existing } = await serviceClient
       .from("llmwatch_scores")
-      .upsert(scorePayload, { onConflict: "client_id,week_start" })
-      .select()
-      .single();
+      .select("id")
+      .eq("client_id", clientId)
+      .eq("week_start", weekStart)
+      .maybeSingle();
+
+    let scoreEntry;
+    let scoreError;
+
+    if (existing) {
+      // UPDATE existing row
+      const res = await serviceClient
+        .from("llmwatch_scores")
+        .update(scoreFields)
+        .eq("id", existing.id)
+        .select()
+        .single();
+      scoreEntry = res.data;
+      scoreError = res.error;
+    } else {
+      // INSERT new row
+      const res = await serviceClient
+        .from("llmwatch_scores")
+        .insert({ client_id: clientId, week_start: weekStart, ...scoreFields })
+        .select()
+        .single();
+      scoreEntry = res.data;
+      scoreError = res.error;
+    }
 
     if (scoreError) {
       return NextResponse.json(
