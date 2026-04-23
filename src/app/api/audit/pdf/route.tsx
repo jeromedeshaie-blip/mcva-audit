@@ -28,8 +28,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "ID audit requis" }, { status: 400 });
     }
 
-    // Fetch audit data in parallel
-    const [auditRes, scoresRes, itemsRes, actionsRes, uploadsRes] = await Promise.all([
+    // Fetch audit data in parallel (including v2.1 external blocks A-F)
+    const [auditRes, scoresRes, itemsRes, actionsRes, uploadsRes, blocksRes] = await Promise.all([
       supabase.from("audits").select("*").eq("id", auditId).single(),
       supabase.from("audit_scores").select("*").eq("audit_id", auditId).single(),
       supabase
@@ -47,6 +47,10 @@ export async function GET(request: NextRequest) {
         .select("source, parsed_data, status")
         .eq("audit_id", auditId)
         .eq("status", "parsed"),
+      supabase
+        .from("audit_external_blocks")
+        .select("bloc_letter, source_label")
+        .eq("audit_id", auditId),
     ]);
 
     if (!auditRes.data || !scoresRes.data) {
@@ -137,6 +141,27 @@ export async function GET(request: NextRequest) {
           }
         : undefined;
 
+      // POLE-PERF v2.1 § 6.5 — external blocks A-F source labels
+      const sourcesUsed = (blocksRes.data || [])
+        .map((b: any) => b.source_label)
+        .filter(Boolean) as string[];
+
+      // POLE-PERF v2.1 § 5 — Score GEO™ 4 composantes depuis geo_data
+      const geoData: any = scores.geo_data || {};
+      const scoreGeoBreakdown = geoData.score_source === "llm_watch"
+        ? {
+            presence: Number(geoData.score_presence) || 0,
+            exactitude: Number(geoData.score_exactitude) || 0,
+            sentiment: Number(geoData.score_sentiment) || 0,
+            recommendation: Number(geoData.score_recommendation) || 0,
+            model_snapshot_version: geoData.model_snapshot_version || null,
+            run_count: geoData.run_count ?? null,
+            score_stddev: geoData.score_stddev ?? null,
+            run_level: geoData.run_level || null,
+            source: "llm_watch" as const,
+          }
+        : undefined;
+
       html = renderUltraAuditPdf({
         audit,
         scores,
@@ -158,6 +183,8 @@ export async function GET(request: NextRequest) {
         },
         semrushData,
         qwairyData,
+        sourcesUsed,
+        scoreGeoBreakdown,
       });
     } else {
       html = renderAuditPdf({

@@ -35,6 +35,18 @@ export async function POST(request: NextRequest) {
 
   const serviceClient = createServiceClient();
 
+  // Generate formatted reference (AUDIT-2026-001 / THEMA-2026-001 / PRE-2026-001)
+  // POLE-PERF v2.1 § 10.
+  let reference: string | null = null;
+  try {
+    const { data: refRes } = await serviceClient.rpc("generate_audit_reference_v2_1", {
+      p_audit_type: auditType,
+    });
+    if (typeof refRes === "string") reference = refRes;
+  } catch {
+    // Function may not exist in old DBs — skip gracefully
+  }
+
   // Create audit record
   const { data: audit, error: createErr } = await serviceClient
     .from("audits")
@@ -47,6 +59,7 @@ export async function POST(request: NextRequest) {
       created_by: user.id,
       theme: auditType !== "ultra" && themes.length === 1 ? themes[0] : null,
       themes: themes.length > 0 ? themes : null,
+      reference,
     })
     .select()
     .single();

@@ -7,6 +7,9 @@
  */
 
 export const PDF_STYLES = `
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=general-sans@200,300,400,500,600,700,800&display=swap');
+
 :root {
   --red: #8B2C2C;
   --dark-red: #5C1A1A;

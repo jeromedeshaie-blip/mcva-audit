@@ -207,10 +207,29 @@ export interface UltraAuditData extends PdfRenderData {
     scope?: string;
     sector?: string;
   };
-  /** Optional Semrush data */
+  /** @deprecated — Semrush retiré depuis v2.1 */
   semrushData?: SemrushData;
-  /** Optional Qwairy data */
+  /** @deprecated — Qwairy remplacé par LLM Watch v2 */
   qwairyData?: QwairyData;
+  /**
+   * POLE-PERF v2.1 § 6.5 — sources vérifiées utilisées pour enrichir le scoring.
+   * Ex: ["AWT export 2026-04-23", "GSC export 2026-04-23", "LLM Watch run 2026-04-22"]
+   */
+  sourcesUsed?: string[];
+  /**
+   * Score GEO™ breakdown (4 composantes × 25) si disponible via bloc F LLM Watch.
+   */
+  scoreGeoBreakdown?: {
+    presence: number;
+    exactitude: number;
+    sentiment: number;
+    recommendation: number;
+    model_snapshot_version?: string | null;
+    run_count?: number | null;
+    score_stddev?: number | null;
+    run_level?: string | null;
+    source: "llm_watch" | "cite_estimation";
+  };
 }
 
 // ─── Section-based architecture ───
@@ -766,6 +785,30 @@ function renderThemeSection(
 
 // ─── COVER ───
 
+/**
+ * Tessellation Mark v3.2 — 4 cubes avec gradient rouge + croix suisse
+ * SVG inline pour reproduction fidèle dans le PDF.
+ */
+const TESSELLATION_MARK_SVG = `
+<svg width="64" height="64" viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tessellation-pdf" x1="0" y1="0" x2="84" y2="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4A1515"/>
+      <stop offset="20%" stop-color="#6B2020"/>
+      <stop offset="40%" stop-color="#8B2C2C"/>
+      <stop offset="60%" stop-color="#A83D33"/>
+      <stop offset="80%" stop-color="#C44A38"/>
+      <stop offset="100%" stop-color="#A53535"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="28" height="28" rx="4" fill="url(#tessellation-pdf)"/>
+  <rect x="34" y="2" width="28" height="28" rx="4" fill="url(#tessellation-pdf)"/>
+  <rect x="2" y="34" width="28" height="28" rx="4" fill="url(#tessellation-pdf)"/>
+  <rect x="34" y="34" width="28" height="28" rx="4" fill="url(#tessellation-pdf)"/>
+  <rect x="44" y="38" width="8" height="20" rx="1.5" fill="#F0E8E4"/>
+  <rect x="38" y="44" width="20" height="8" rx="1.5" fill="#F0E8E4"/>
+</svg>`;
+
 function renderCover(data: UltraAuditData): string {
   const { audit, clientContext } = data;
   const clientName =
@@ -779,13 +822,14 @@ function renderCover(data: UltraAuditData): string {
   return `<div class="page cover" style="height:297mm;">
   <div class="cover-top-bar"></div>
   <div class="cover-content">
-    <div class="cover-eyebrow">MCVA Consulting SA \u00B7 Audit digital</div>
-    <div class="cover-title">Audit Digital<br>Complet</div>
+    <div style="margin-bottom:24mm;">${TESSELLATION_MARK_SVG}</div>
+    <div class="cover-eyebrow">MCVA Consulting SA \u00B7 P\u00f4le Performance</div>
+    <div class="cover-title">Audit Digital<br>Ultra</div>
     <div class="cover-client">${esc(clientName)}</div>
     <div class="cover-domains">${esc(domains)} \u00B7 Benchmark</div>
   </div>
   <div class="cover-footer">
-    <div class="cover-footer-text">Rapport confidentiel pr\u00e9par\u00e9 par MCVA Consulting SA<br>Chemin des Cr\u00eates 7 \u2014 1997 Haute-Nendaz \u00B7 Valais \u00B7 Suisse</div>
+    <div class="cover-footer-text">Rapport confidentiel pr\u00e9par\u00e9 par MCVA Consulting SA<br>Chemin des Cr\u00eates 7 \u2014 1997 Haute-Nendaz \u00B7 Valais \u00B7 Suisse \u00B7 mcva.ch</div>
     <div class="cover-ref" style="margin-top:3mm">${esc(ref)} \u00B7 ${esc(date)}</div>
   </div>
 </div>`;
@@ -840,7 +884,7 @@ function renderTableOfContents(data: UltraAuditData): string {
 // ─── SYNTHESE EXECUTIVE ───
 
 function renderSynthese(data: UltraAuditData): string {
-  const { audit, items, themeScores } = data;
+  const { audit, items, themeScores, sourcesUsed, scoreGeoBreakdown } = data;
   const ref = audit.reference ?? audit.domain;
   const globalScore = computeGlobalScore(themeScores);
   const findings = extractKeyFindings(items, 3);
@@ -855,6 +899,44 @@ function renderSynthese(data: UltraAuditData): string {
     })
     .join("");
 
+  // POLE-PERF v2.1 § 6.5 — Sources block
+  const sourcesBlock = sourcesUsed && sourcesUsed.length > 0
+    ? `<div style="margin-top:4mm; padding:3mm 4mm; background:var(--gray-50); border-left:3px solid var(--red); font-size:7.5pt; color:var(--gray-600);">
+         <strong style="color:var(--gray-800);">Sources v\u00e9rifi\u00e9es</strong> : ${sourcesUsed.map(esc).join(" \u00B7 ")}
+       </div>`
+    : `<div style="margin-top:4mm; padding:3mm 4mm; background:rgba(184,134,11,0.08); border-left:3px solid var(--orange); font-size:7.5pt; color:var(--gray-700);">
+         <strong>Mode d\u00e9grad\u00e9</strong> : Score GEO\u2122 estim\u00e9 via signaux HTML (CITE). Recommander l\u2019activation LLM Watch pour obtenir une mesure r\u00e9elle.
+       </div>`;
+
+  // POLE-PERF v2.1 § 5 — Score GEO™ 4 composantes breakdown
+  const geoBreakdownBlock = scoreGeoBreakdown && scoreGeoBreakdown.source === "llm_watch"
+    ? `<h2 style="margin-top:6mm;">Score GEO\u2122 \u2014 4 composantes</h2>
+       <div style="display:flex; gap:3mm; margin:3mm 0;">
+         <div class="score-badge" style="flex:1;">
+           <div class="score-badge-value ${scoreColorClass(scoreGeoBreakdown.presence * 4)}">${scoreGeoBreakdown.presence.toFixed(1)}</div>
+           <div class="score-badge-label">Pr\u00e9sence /25</div>
+         </div>
+         <div class="score-badge" style="flex:1;">
+           <div class="score-badge-value ${scoreColorClass(scoreGeoBreakdown.exactitude * 4)}">${scoreGeoBreakdown.exactitude.toFixed(1)}</div>
+           <div class="score-badge-label">Exactitude /25</div>
+         </div>
+         <div class="score-badge" style="flex:1;">
+           <div class="score-badge-value ${scoreColorClass(scoreGeoBreakdown.sentiment * 4)}">${scoreGeoBreakdown.sentiment.toFixed(1)}</div>
+           <div class="score-badge-label">Sentiment /25</div>
+         </div>
+         <div class="score-badge" style="flex:1;">
+           <div class="score-badge-value ${scoreColorClass(scoreGeoBreakdown.recommendation * 4)}">${scoreGeoBreakdown.recommendation.toFixed(1)}</div>
+           <div class="score-badge-label">Recommandation /25</div>
+         </div>
+       </div>
+       ${scoreGeoBreakdown.model_snapshot_version ? `<div style="font-size:7pt; color:var(--gray-400); margin-top:2mm;">
+         Snapshot LLM : <span class="text-mono">${esc(scoreGeoBreakdown.model_snapshot_version)}</span>
+         ${scoreGeoBreakdown.run_count ? ` \u00B7 Runs : <span class="text-mono">${scoreGeoBreakdown.run_count}</span>` : ""}
+         ${scoreGeoBreakdown.score_stddev != null ? ` \u00B7 \u03C3 : <span class="text-mono">\u00B1${scoreGeoBreakdown.score_stddev.toFixed(2)}</span>` : ""}
+         ${scoreGeoBreakdown.run_level ? ` \u00B7 Niveau : <span class="text-mono">${esc(scoreGeoBreakdown.run_level)}</span>` : ""}
+       </div>` : ""}`
+    : "";
+
   return `<div class="page">
   ${renderSectionHeader("synthese", "01", "Synth\u00e8se ex\u00e9cutive", "Vue d\u2019ensemble \u00B7 Scores \u00B7 Constats cl\u00e9s")}
   <div class="page-inner" style="padding-top:8mm;">
@@ -867,6 +949,9 @@ function renderSynthese(data: UltraAuditData): string {
       <strong style="font-size:14pt; color:var(--red);">Score global : ${globalScore}/100</strong><br>
       <span style="font-size:9pt; color:var(--beige);">${totalActions} points d\u2019am\u00e9lioration identifi\u00e9s \u00B7 Potentiel d\u2019am\u00e9lioration ${globalScore < 40 ? "majeur" : globalScore < 60 ? "significatif" : "mod\u00e9r\u00e9"}</span>
     </div>
+
+    ${sourcesBlock}
+    ${geoBreakdownBlock}
 
     <h2>3 constats cl\u00e9s</h2>
     ${findings
