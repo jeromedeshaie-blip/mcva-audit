@@ -7,6 +7,8 @@ import { mockActionPlan } from "@/lib/scoring/mock-scorer";
 import type { SeoData, GeoData, QualityLevel, AuditTheme } from "@/types/audit";
 import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 import { SCORING_VERSION } from "@/lib/scoring/constants";
+import { loadAuditBlocs } from "@/lib/audit/load-blocs";
+import { buildEnrichment, formatSourcesCitation } from "@/lib/scoring/external-mapping";
 
 export const maxDuration = 60;
 
@@ -40,6 +42,23 @@ export async function POST(request: NextRequest) {
   const auditUrl = auditRes.data?.url || "";
   const auditType = auditRes.data?.audit_type || "full";
   const auditThemes: AuditTheme[] = auditRes.data?.themes || [];
+
+  // POLE-PERF v2.1 § 6.5 — charge les blocs externes A-F si présents
+  const blocsBundle = await loadAuditBlocs(serviceClient, auditId);
+  const enrichment = buildEnrichment(blocsBundle);
+
+  // Apply enrichment: override specific item_codes with verified scores
+  if (Object.keys(enrichment.criteria).length > 0) {
+    for (const item of items as any[]) {
+      const override = enrichment.criteria[item.item_code];
+      if (override) {
+        item.score = override.score;
+        item.status = override.score >= 75 ? "pass" : override.score >= 25 ? "partial" : "fail";
+        item.notes = `${item.notes || ""}\n[Source vérifiée: ${override.source_label}]`.trim();
+      }
+    }
+  }
+
   const coreEeatItems = items.filter((i: any) => i.framework === "core_eeat");
   const citeItems = items.filter((i: any) => i.framework === "cite");
 
@@ -47,7 +66,13 @@ export async function POST(request: NextRequest) {
   const coreEeatScores = aggregateScores(coreEeatItems);
   const citeScores = aggregateScores(citeItems);
   const scoreSeo = calculateSeoScore(coreEeatScores);
-  const scoreGeo = (geoData as any)?.ai_visibility_score ?? 0;
+
+  // Score GEO™ : priorité à l'override Bloc F (LLM Watch), sinon ai_visibility_score estimé
+  const scoreGeo = enrichment.scoreGeoOverride
+    ? enrichment.scoreGeoOverride.score_geo
+    : ((geoData as any)?.ai_visibility_score ?? 0);
+
+  const sourcesCitation = formatSourcesCitation(enrichment.sourceLabels);
 
   // Aggregate new theme scores
   const themeFrameworks = ["perf", "a11y", "rgesn", "tech", "contenu"] as const;
@@ -144,7 +169,23 @@ export async function POST(request: NextRequest) {
     seo_provider: seoProvider.name,
     seo_data: enrichedSeoData,
     geo_provider: process.env.GEO_PROVIDER || "direct_ai",
-    geo_data: geoData || {},
+    geo_data: enrichment.scoreGeoOverride
+      ? {
+          ...(geoData || {}),
+          // POLE-PERF v2.1 § 5 : composantes Score GEO™ depuis LLM Watch
+          score_presence: enrichment.scoreGeoOverride.score_presence,
+          score_exactitude: enrichment.scoreGeoOverride.score_exactitude,
+          score_sentiment: enrichment.scoreGeoOverride.score_sentiment,
+          score_recommendation: enrichment.scoreGeoOverride.score_recommendation,
+          score_by_llm: enrichment.scoreGeoOverride.score_by_llm,
+          score_source: "llm_watch",
+          score_source_label: enrichment.scoreGeoOverride.source_label,
+          model_snapshot_version: enrichment.scoreGeoOverride.metadata.model_snapshot_version,
+          run_count: enrichment.scoreGeoOverride.metadata.run_count,
+          score_stddev: enrichment.scoreGeoOverride.metadata.score_stddev,
+          run_level: enrichment.scoreGeoOverride.metadata.run_level,
+        }
+      : { ...(geoData || {}), score_source: "cite_estimation" },
     competitors: competitors || null,
     scoring_version: SCORING_VERSION,
   });
@@ -242,5 +283,10 @@ export async function POST(request: NextRequest) {
     itemCount: items.length,
     techActionCount: techActions.length,
     llmActionCount: llmActions.length,
+    // POLE-PERF v2.1 § 6.5 — traçabilité des sources
+    scoring_version: SCORING_VERSION,
+    external_blocks_used: enrichment.sourceLabels,
+    sources_citation: sourcesCitation,
+    score_geo_source: enrichment.scoreGeoOverride ? "llm_watch" : "cite_estimation",
   });
 }
