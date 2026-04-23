@@ -1,5 +1,82 @@
 import * as cheerio from "cheerio";
 
+/**
+ * Signature patterns identifying parked-domain pages.
+ * Detected via title, body text, or known parking-service hosts.
+ * Section 14 règle 10 POLE-PERFORMANCE: vérifier qu'un site existe vraiment avant d'auditer.
+ */
+const PARKED_DOMAIN_PATTERNS = [
+  // Title / body text
+  /this\s+domain\s+(is\s+)?(for\s+sale|is\s+parked|may\s+be\s+for\s+sale)/i,
+  /buy\s+this\s+domain/i,
+  /domain\s+(for\s+sale|parking)/i,
+  /domaine\s+(en\s+vente|parqué|a\s+vendre)/i,
+  /parked\s+free,\s+courtesy\s+of/i,
+  /related\s+searches/i, // GoDaddy parking pages
+];
+
+const PARKING_HOSTS = [
+  "sedoparking.com",
+  "parkingcrew.net",
+  "parking.godaddy.com",
+  "parkingcrew.com",
+  "bodis.com",
+  "nameshift.com",
+  "afternic.com",
+  "dan.com",
+];
+
+export interface ParkedDomainError extends Error {
+  code: "PARKED_DOMAIN";
+  url: string;
+  detectedPattern: string;
+}
+
+/**
+ * Throw a ParkedDomainError if the HTML or redirected URL matches parking signatures.
+ * Non-blocking: only throws when signals are strong (host match OR >=2 text patterns).
+ */
+export function assertNotParkedDomain(html: string, finalUrl: string): void {
+  const finalHost = (() => {
+    try { return new URL(finalUrl).hostname.toLowerCase(); } catch { return ""; }
+  })();
+
+  // Host-level detection (high confidence)
+  for (const parkingHost of PARKING_HOSTS) {
+    if (finalHost.includes(parkingHost)) {
+      const err = new Error(
+        `Domaine parqué détecté: ${finalUrl} redirige vers ${parkingHost}. ` +
+        `Vérifier la vraie URL du site client avant d'auditer.`
+      ) as ParkedDomainError;
+      err.code = "PARKED_DOMAIN";
+      err.url = finalUrl;
+      err.detectedPattern = `host:${parkingHost}`;
+      throw err;
+    }
+  }
+
+  // Text-pattern detection (medium confidence — require 2+ matches)
+  const bodyLower = html.slice(0, 50000).toLowerCase();
+  let matches = 0;
+  let firstMatch = "";
+  for (const pattern of PARKED_DOMAIN_PATTERNS) {
+    if (pattern.test(bodyLower)) {
+      if (!firstMatch) firstMatch = pattern.source;
+      matches++;
+    }
+  }
+  if (matches >= 2) {
+    const err = new Error(
+      `Domaine parqué suspecté: ${finalUrl} (${matches} signaux de parking détectés). ` +
+      `Vérifier la vraie URL avant d'auditer.`
+    ) as ParkedDomainError;
+    err.code = "PARKED_DOMAIN";
+    err.url = finalUrl;
+    err.detectedPattern = `text:${firstMatch}`;
+    throw err;
+  }
+}
+
 export interface CrawlResult {
   url: string;
   html: string;
@@ -34,6 +111,11 @@ export async function crawlUrl(url: string): Promise<CrawlResult> {
 
   const html = await response.text();
   const loadTime = Date.now() - start;
+
+  // Parked-domain detection — throws ParkedDomainError if strong signals found.
+  // POLE-PERFORMANCE v2.1 règle 10.
+  assertNotParkedDomain(html, response.url || url);
+
   const $ = cheerio.load(html);
 
   // Extraction données structurées
