@@ -1,5 +1,9 @@
 /**
  * Shared constants for the MCVA Audit Platform.
+ *
+ * NOTE: Scoring weights (CORE-EEAT, CITE, themes) and versioning live in
+ * src/lib/scoring/constants.ts — aligned with POLE-PERFORMANCE.md v2.1.
+ * This file covers sector taxonomy, quality config, and LLM Watch run config.
  */
 
 export interface SectorGroup {

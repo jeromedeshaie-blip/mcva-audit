@@ -1,5 +1,8 @@
 // ============================================================
-// Semrush CSV Parser — Parse exported CSV data into structured format
+// Semrush CSV Parser — LEGACY (deprecated v2.1)
+// ============================================================
+// @deprecated Since v2.1 (2026-04-23), Semrush is replaced by AWT + GSC + GA4 + Moz + SimilarWeb + Seobility.
+// Kept for backward compatibility with archived audits. New audits should use the Wizard Ultra (Phase 2C).
 // ============================================================
 
 export interface SemrushData {

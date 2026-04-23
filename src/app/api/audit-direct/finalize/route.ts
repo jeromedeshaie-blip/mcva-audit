@@ -6,6 +6,7 @@ import { generateActionPlan, generateUltraActionPlan } from "@/lib/scoring/actio
 import { mockActionPlan } from "@/lib/scoring/mock-scorer";
 import type { SeoData, GeoData, QualityLevel, AuditTheme } from "@/types/audit";
 import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
+import { SCORING_VERSION } from "@/lib/scoring/constants";
 
 export const maxDuration = 60;
 
@@ -145,6 +146,7 @@ export async function POST(request: NextRequest) {
     geo_provider: process.env.GEO_PROVIDER || "direct_ai",
     geo_data: geoData || {},
     competitors: competitors || null,
+    scoring_version: SCORING_VERSION,
   });
 
   if (scoresErr) {

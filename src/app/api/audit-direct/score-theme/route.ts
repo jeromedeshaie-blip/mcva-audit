@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { scoreThemeDimension, getThemeDimensions } from "@/lib/scoring/theme-scorer";
 import { mockScoreThemeDimension, mockGetThemeDimensions } from "@/lib/scoring/mock-scorer";
+import { SCORING_VERSION } from "@/lib/scoring/constants";
 import type { QualityLevel } from "@/types/audit";
 
 export const maxDuration = 60;
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
       await serviceClient.from("audit_items").insert(
         mockItems.map((item) => ({
           audit_id: auditId,
+          scoring_version: SCORING_VERSION,
           ...item,
           score: Math.round(Number(item.score) || 50),
         }))
@@ -146,6 +148,7 @@ export async function POST(request: NextRequest) {
       .from("audit_items")
       .insert(items.map((item) => ({
         audit_id: auditId,
+        scoring_version: SCORING_VERSION,
         framework: item.framework,
         dimension: item.dimension,
         item_code: item.item_code,

@@ -11,6 +11,7 @@ import {
   calculateSeoScore,
 } from "@/lib/scoring/scorer";
 import { QUALITY_CONFIG } from "@/lib/constants";
+import { SCORING_VERSION } from "@/lib/scoring/constants";
 import type { QualityLevel, GeoData, SeoData, AuditItem } from "@/types/audit";
 import * as cheerio from "cheerio";
 
@@ -304,6 +305,7 @@ export async function POST(request: NextRequest) {
       geo_provider: process.env.GEO_PROVIDER || "direct_ai",
       geo_data: geoData,
       competitors,
+      scoring_version: SCORING_VERSION,
     });
 
     if (scoresErr) {
@@ -315,7 +317,7 @@ export async function POST(request: NextRequest) {
     // Save items
     if (allScoredItems.length > 0) {
       const { error: itemsErr } = await serviceClient.from("audit_items").insert(
-        allScoredItems.map((item: any) => ({ audit_id: finalAuditId, ...item }))
+        allScoredItems.map((item: any) => ({ audit_id: finalAuditId, scoring_version: SCORING_VERSION, ...item }))
       );
       if (itemsErr) log.push(`[${elapsed()}] Save items warning: ${itemsErr.message}`);
     }

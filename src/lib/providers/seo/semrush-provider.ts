@@ -2,10 +2,14 @@ import type { SeoProvider } from "./seo-provider";
 import type { SeoData, CompetitorData } from "@/types/audit";
 
 /**
- * SemrushProvider — Palier 2 (Production)
+ * SemrushProvider — DEPRECATED since v2.1 (2026-04-23).
  *
- * À implémenter en Phase 2 quand la licence Semrush est activée.
- * Pour l'instant, stub qui lève une erreur.
+ * @deprecated Semrush non disponible depuis avril 2026.
+ * Utiliser le Wizard Ultra (6 blocs A-F) avec AWT + GSC + GA4 + Moz + SimilarWeb + Seobility.
+ * Voir POLE-PERFORMANCE.md v2.1 section 6.
+ *
+ * Ce provider reste en place pour la rétro-compatibilité des audits archivés
+ * mais lève une erreur à l'initialisation si utilisé.
  */
 export class SemrushProvider implements SeoProvider {
   readonly name = "semrush" as const;

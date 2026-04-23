@@ -115,16 +115,14 @@ export const THEME_PRICES: Record<AuditTheme, number> = {
   contenu: 490,
 };
 
-/** Ultra Audit global score weights per theme */
-export const GLOBAL_SCORE_WEIGHTS: Record<AuditTheme, number> = {
-  seo: 0.20,
-  geo: 0.25,
-  perf: 0.12,
-  a11y: 0.12,
-  rgesn: 0.08,
-  tech: 0.08,
-  contenu: 0.15,
-};
+/**
+ * Ultra Audit global score weights per theme.
+ *
+ * ⚠️ Centralized in src/lib/scoring/constants.ts (THEME_WEIGHTS).
+ * This export is kept for backward compatibility.
+ */
+import { THEME_WEIGHTS } from "@/lib/scoring/constants";
+export const GLOBAL_SCORE_WEIGHTS: Record<AuditTheme, number> = THEME_WEIGHTS;
 
 // --- SEO Data (provider-agnostic) ---
 

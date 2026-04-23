@@ -3,6 +3,7 @@ import type { AuditItem, CoreEeatDimension, CiteDimension, ItemStatus, QualityLe
 import { CORE_EEAT_ITEMS, EXPRESS_ITEMS, type CoreEeatItemDef } from "./core-eeat-items";
 import { CITE_ITEMS, CITE_EXPRESS_ITEMS, type CiteItemDef } from "./cite-items";
 import { QUALITY_CONFIG } from "@/lib/constants";
+import { CORE_EEAT_WEIGHTS, CITE_WEIGHTS } from "./constants";
 
 /**
  * Scoring CORE-EEAT via LLM.
@@ -458,21 +459,37 @@ Réponds UNIQUEMENT avec le tableau JSON, sans texte avant ni après.`;
 
 /**
  * Calcule le score SEO consolidé (0-100) à partir des scores CORE-EEAT.
+ * Poids centralisés dans ./constants.ts (CORE_EEAT_WEIGHTS).
  */
 export function calculateSeoScore(
   coreEeatScores: Record<string, number>
 ): number {
-  const weights: Record<string, number> = {
-    C: 0.15, O: 0.15, R: 0.10, E: 0.10,
-    Exp: 0.15, Ept: 0.15, A: 0.10, T: 0.10,
-  };
-
   let weighted = 0;
   let totalWeight = 0;
 
-  for (const [dim, weight] of Object.entries(weights)) {
+  for (const [dim, weight] of Object.entries(CORE_EEAT_WEIGHTS)) {
     if (coreEeatScores[dim] !== undefined) {
       weighted += coreEeatScores[dim] * weight;
+      totalWeight += weight;
+    }
+  }
+
+  return totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
+}
+
+/**
+ * Calcule le score CITE consolidé (0-100) à partir des scores par dimension.
+ * Poids centralisés dans ./constants.ts (CITE_WEIGHTS — 25 % chacune).
+ */
+export function calculateCiteScore(
+  citeScores: Record<string, number>
+): number {
+  let weighted = 0;
+  let totalWeight = 0;
+
+  for (const [dim, weight] of Object.entries(CITE_WEIGHTS)) {
+    if (citeScores[dim] !== undefined) {
+      weighted += citeScores[dim] * weight;
       totalWeight += weight;
     }
   }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { scoreOneDimension, scoreOneCiteDimension } from "@/lib/scoring/scorer";
 import { mockScoreOneDimension, mockScoreOneCiteDimension } from "@/lib/scoring/mock-scorer";
+import { SCORING_VERSION } from "@/lib/scoring/constants";
 import type { QualityLevel } from "@/types/audit";
 
 export const maxDuration = 60;
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     if (mockItems.length > 0) {
       await serviceClient.from("audit_items").delete().eq("audit_id", auditId).in("dimension", dimensions);
-      await serviceClient.from("audit_items").insert(mockItems.map((item) => ({ audit_id: auditId, ...item })));
+      await serviceClient.from("audit_items").insert(mockItems.map((item) => ({ audit_id: auditId, scoring_version: SCORING_VERSION, ...item })));
     }
 
     return NextResponse.json({ scored: dimensions, framework, itemCount: mockItems.length, dryrun: true });
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
 
     const { error: insertErr } = await serviceClient
       .from("audit_items")
-      .insert(items.map((item: any) => ({ audit_id: auditId, ...item })));
+      .insert(items.map((item: any) => ({ audit_id: auditId, scoring_version: SCORING_VERSION, ...item })));
 
     if (insertErr) {
       return NextResponse.json({

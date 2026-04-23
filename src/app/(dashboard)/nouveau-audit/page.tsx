@@ -285,19 +285,16 @@ export default function NouveauAuditPage() {
           );
         }
 
-        // Ultra: batch 4 dimensions per call (300s maxDuration allows larger batches)
-        // Non-ultra: batch 2 dimensions per call (faster with smaller models)
-        const coreEeatBatches = effectiveQuality === "ultra"
-          ? [
-              { dimensions: ["C", "O", "R", "E"], label: "CORE-EEAT C,O,R,E" },
-              { dimensions: ["Exp", "Ept", "A", "T"], label: "CORE-EEAT Exp,Ept,A,T" },
-            ]
-          : [
-              { dimensions: ["C", "O"], label: "CORE-EEAT C,O" },
-              { dimensions: ["R", "E"], label: "CORE-EEAT R,E" },
-              { dimensions: ["Exp", "Ept"], label: "CORE-EEAT Exp,Ept" },
-              { dimensions: ["A", "T"], label: "CORE-EEAT A,T" },
-            ];
+        // Vercel Hobby = 60s max per function call.
+        // CORE-EEAT scoring via Sonnet takes ~20-30s per dimension in ultra mode,
+        // so we cap batches at 2 dimensions/call regardless of quality level.
+        // Upgrade to Vercel Pro (300s) to unlock 4 dimensions/call.
+        const coreEeatBatches = [
+          { dimensions: ["C", "O"], label: "CORE-EEAT C,O" },
+          { dimensions: ["R", "E"], label: "CORE-EEAT R,E" },
+          { dimensions: ["Exp", "Ept"], label: "CORE-EEAT Exp,Ept" },
+          { dimensions: ["A", "T"], label: "CORE-EEAT A,T" },
+        ];
 
         for (let bIdx = 0; bIdx < coreEeatBatches.length; bIdx++) {
           if (abortRef.current) return;
@@ -329,15 +326,11 @@ export default function NouveauAuditPage() {
             );
           }
 
-          // Ultra: all 4 CITE dimensions in one call (300s maxDuration)
-          const citeBatches = effectiveQuality === "ultra"
-            ? [
-                { dimensions: ["C", "I", "T", "E"], label: "CITE C,I,T,E" },
-              ]
-            : [
-                { dimensions: ["C", "I"], label: "CITE C,I" },
-                { dimensions: ["T", "E"], label: "CITE T,E" },
-              ];
+          // Always batch CITE 2 dimensions/call — safe for Vercel Hobby (60s).
+          const citeBatches = [
+            { dimensions: ["C", "I"], label: "CITE C,I" },
+            { dimensions: ["T", "E"], label: "CITE T,E" },
+          ];
 
           for (const batch of citeBatches) {
             if (abortRef.current) return;
@@ -659,7 +652,10 @@ export default function NouveauAuditPage() {
                       />
                     </svg>
                     <span className="text-sm font-medium">
-                      Donnees Semrush (CSV)
+                      Donnees externes SEO (CSV — legacy Semrush / AWT)
+                    </span>
+                    <span className="mt-1 text-xs text-muted-foreground">
+                      Depuis v2.1: preferer le Wizard Ultra (6 blocs A-F)
                     </span>
                     {semrushFile && (
                       <span className="mt-1 text-xs text-green-600">
