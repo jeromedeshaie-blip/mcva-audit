@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/benchmarks", label: "Benchmarks" },
   { href: "/llmwatch", label: "LLM Watch" },
   { href: "/classements", label: "Classements" },
+  { href: "/settings/integrations", label: "Intégrations" },
 ];
 
 /**
