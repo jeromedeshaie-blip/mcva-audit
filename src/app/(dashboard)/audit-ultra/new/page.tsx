@@ -15,7 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SECTOR_GROUPS, QUALITY_LEVELS } from "@/lib/constants";
+import { QUALITY_LEVELS } from "@/lib/constants";
+import { SectorCombobox } from "@/components/ui/sector-combobox";
 import { EXTERNAL_BLOCKS, canRunUltra, type ExternalBlockLetter } from "@/lib/scoring/constants";
 
 type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
@@ -234,21 +235,12 @@ export default function AuditUltraWizard() {
             </div>
             <div>
               <Label htmlFor="sector">Secteur *</Label>
-              <select
-                id="sector"
-                className="w-full rounded-md border px-3 py-2"
+              <SectorCombobox
                 value={sector}
-                onChange={(e) => setSector(e.target.value)}
-              >
-                <option value="">-- Choisir --</option>
-                {SECTOR_GROUPS.map((group) => (
-                  <optgroup key={group.value} label={group.label}>
-                    {group.subSectors.map((ss) => (
-                      <option key={ss.value} value={ss.value}>{ss.label}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                onValueChange={setSector}
+                placeholder="Rechercher un secteur (ex: fiduciaire, horlogerie, hotel...)"
+                className="w-full"
+              />
             </div>
             <div>
               <Label htmlFor="quality">Niveau de qualité</Label>
