@@ -7,9 +7,11 @@ const NAV_ITEMS = [
   { href: "/", label: "Tableau de bord" },
   { href: "/nouveau-audit", label: "Nouvel Audit" },
   { href: "/audit-ultra/new", label: "Audit Ultra" },
+  { href: "/audit-local", label: "Import Local" },
   { href: "/benchmarks", label: "Benchmarks" },
   { href: "/llmwatch", label: "LLM Watch" },
   { href: "/classements", label: "Classements" },
+  { href: "/settings/api-keys", label: "Clés API" },
   { href: "/settings/integrations", label: "Intégrations" },
 ];
 
