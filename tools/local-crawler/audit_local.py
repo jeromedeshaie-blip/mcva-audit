@@ -283,12 +283,17 @@ async def crawl_site(root_url: str, max_pages: int) -> list[dict[str, Any]]:
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=2, min=2, max=30))
 def call_ollama(prompt: str) -> str:
-    """Appel Ollama avec format=json forcé. Retourne la string JSON brute."""
+    """Appel Ollama avec format=json forcé. Retourne la string JSON brute.
+
+    ⚠ Gemma 4 a un mode 'thinking' activé par défaut qui bloque la réponse finale.
+    On désactive avec "think": false (Ollama 0.21+).
+    """
     payload = {
         "model": LOCAL_LLM,
         "prompt": prompt,
         "format": "json",
         "stream": False,
+        "think": False,  # ← critique pour Gemma 4, sinon réponse vide
         "options": {
             "temperature": 0.0,  # Reproductibilité
             "num_predict": 4096,
