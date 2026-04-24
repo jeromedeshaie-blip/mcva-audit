@@ -217,11 +217,12 @@ export const QUALITY_LEVELS = [
 /** Quality level configuration */
 export const QUALITY_CONFIG = {
   eco: {
-    scoringModel: "claude-haiku-4-20250404" as const,
+    // Claude Haiku 4.5 — modèle officiel ID (Anthropic release oct 2025)
+    scoringModel: "claude-haiku-4-5-20251001" as const,
     htmlMaxChars: 20000,
     geoModels: ["claude"] as const,
     maxTokensScoring: 1500,
-    actionPlanModel: "claude-haiku-4-20250404" as const,
+    actionPlanModel: "claude-haiku-4-5-20251001" as const,
     actionPlanMaxTokens: 2500,
     actionPlanCount: 15,
     notesDepth: "concise" as const,
