@@ -360,22 +360,25 @@ def extract_page_data(html: str, url: str) -> dict[str, Any]:
                           "apple-mobile-web-app-capable", "apple-mobile-web-app-status-bar-style",
                           "next-size-adjust", "color-scheme"}
     for tag in soup.find_all("meta"):
+        # Protect against already-decomposed tags (attrs becomes None)
+        if tag.attrs is None:
+            continue
         name = (tag.get("name") or tag.get("http-equiv") or "").lower()
-        if name in useless_meta_names:
-            tag.decompose()
-        # Drop <meta charset> (attribute-only, no name)
-        if tag.get("charset"):
+        has_charset_attr = bool(tag.get("charset"))
+        if name in useless_meta_names or has_charset_attr:
             tag.decompose()
 
     # 4. Strip verbose attributes on remaining tags (class, style, data-*, aria-* except labels)
     noise_attrs_exact = {"class", "style", "srcset", "sizes", "loading", "decoding",
                          "fetchpriority", "crossorigin", "referrerpolicy"}
     for tag in soup.find_all(True):
+        if tag.attrs is None:
+            continue
         attrs_to_remove = []
         for attr in list(tag.attrs.keys()):
             if attr in noise_attrs_exact:
                 attrs_to_remove.append(attr)
-            elif attr.startswith("data-") or attr.startswith("aria-") and attr != "aria-label":
+            elif attr.startswith("data-") or (attr.startswith("aria-") and attr != "aria-label"):
                 attrs_to_remove.append(attr)
         for a in attrs_to_remove:
             del tag.attrs[a]
