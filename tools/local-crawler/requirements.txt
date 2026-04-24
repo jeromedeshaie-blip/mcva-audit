@@ -1,0 +1,10 @@
+# MCVA Local Crawler — Phase 3B dependencies
+# Python 3.12+ requis
+
+playwright==1.49.0
+requests==2.32.3
+pydantic==2.9.2
+python-dotenv==1.0.1
+beautifulsoup4==4.12.3
+rich==13.9.4
+tenacity==9.0.0

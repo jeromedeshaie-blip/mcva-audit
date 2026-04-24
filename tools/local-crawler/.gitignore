@@ -1,0 +1,18 @@
+# Virtual env
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+.env.local
+
+# Runtime data
+cache/
+output/
+*.log
+
+# OS
+.DS_Store
