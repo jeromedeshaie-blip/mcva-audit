@@ -257,15 +257,28 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Mark completed + cleanup HTML
+  // Mark completed. HTML cleanup only for audits WITHOUT local extraction backup.
+  // Sinon on risque de le perdre et re-scorer devient impossible (bloc F / re-runs).
+  const { data: hasLocalExtraction } = await serviceClient
+    .from("audit_local_extractions")
+    .select("id")
+    .eq("audit_id", auditId)
+    .maybeSingle();
+
+  const updatePayload: Record<string, unknown> = {
+    status: "completed",
+    completed_at: new Date().toISOString(),
+    brand_name: null,
+  };
+  if (!hasLocalExtraction) {
+    // Audit via flow web classique : HTML encore stocké, on peut effacer.
+    updatePayload.scraped_html = null;
+  }
+  // Sinon (import local) : on garde scraped_html pour permettre les re-scorings.
+
   await serviceClient
     .from("audits")
-    .update({
-      status: "completed",
-      completed_at: new Date().toISOString(),
-      scraped_html: null,
-      brand_name: null,
-    })
+    .update(updatePayload)
     .eq("id", auditId);
 
   return NextResponse.json({
