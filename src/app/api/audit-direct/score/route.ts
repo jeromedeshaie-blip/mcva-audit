@@ -96,11 +96,15 @@ export async function POST(request: NextRequest) {
 
   // Save items incrementally (delete existing for these dimensions first, then insert)
   if (items.length > 0) {
-    // Delete existing items for these dimensions to make this idempotent
+    // ⚠ BUG v1 fix : filter par framework aussi. Sinon le delete CITE C,I,T,E
+    // efface les items CORE-EEAT des dimensions homonymes (C, E, T).
+    // Les lettres sont partagées entre CORE-EEAT (C,O,R,E,Exp,Ept,A,T)
+    // et CITE (C,I,T,E). Sans filter framework → destruction de 30 items.
     await serviceClient
       .from("audit_items")
       .delete()
       .eq("audit_id", auditId)
+      .eq("framework", framework)
       .in("dimension", dimensions);
 
     const { error: insertErr } = await serviceClient
