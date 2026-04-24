@@ -306,7 +306,7 @@ def call_ollama(prompt: str) -> str:
     response = requests.post(
         f"{OLLAMA_ENDPOINT}/api/generate",
         json=payload,
-        timeout=180,
+        timeout=360,  # 6 min — laisse Gemma 4 31B terminer même sur grosses pages
     )
     response.raise_for_status()
     data = response.json()
