@@ -331,10 +331,15 @@ def extract_page_data(html: str, url: str) -> dict[str, Any]:
     Prompt system ~3k chars + 15k HTML = ~5k tokens → rentre confortablement
     dans num_ctx=16384 configuré dans call_ollama.
     """
-    # Strip scripts/styles before truncate → garde le contenu utile
+    # Strip scripts JS (pas JSON-LD !) + styles → garde contenu utile + structured data
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "noscript"]):
+    for tag in soup(["style", "noscript"]):
         tag.decompose()
+    # Script : strip UNIQUEMENT ceux qui ne sont pas JSON-LD
+    for tag in soup.find_all("script"):
+        script_type = tag.get("type", "").lower()
+        if "json" not in script_type:  # keep application/ld+json, drop text/javascript etc.
+            tag.decompose()
     cleaned = str(soup)
 
     truncated = cleaned[:15000]  # ← diminué de 40000
