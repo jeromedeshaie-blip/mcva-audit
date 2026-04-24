@@ -27,6 +27,9 @@ Documentation granulaire de la plateforme MCVA Audit, splittée par domaine tech
 |---|---|---:|---|
 | 03 | [`03-scoring.md`](./03-scoring.md) | 131 Ko | **Moteur scoring complet** : constants v2.1 + scorer + theme-scorer + action-plan + external-mapping + 7 fichiers items (80 CORE-EEAT + 40 CITE + perf + a11y + tech + contenu + rgesn) + mock |
 | 16 | [`16-database-schema.md`](./16-database-schema.md) | 13 Ko | Schéma DB Supabase complet (tables, contraintes, RPC) |
+| 17 | [`17-local-crawler-setup.md`](./17-local-crawler-setup.md) | 7 Ko | **v3** — Installation Mac Studio (Python, Ollama, Gemma 4 31B) |
+| 18 | [`18-local-crawler-troubleshooting.md`](./18-local-crawler-troubleshooting.md) | 8 Ko | **v3** — Erreurs courantes (Ollama, Playwright, API) |
+| 19 | [`19-local-import-schema.md`](./19-local-import-schema.md) | 10 Ko | **v3** — Schéma JSON LocalImportPayload v3.0 |
 
 ### LLM Watch
 | # | Fichier | Taille | Contenu |
