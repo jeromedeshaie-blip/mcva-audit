@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { aggregateScores, calculateSeoScore } from "@/lib/scoring/scorer";
 import { generateActionPlan, generateUltraActionPlan } from "@/lib/scoring/action-plan";
@@ -9,17 +9,18 @@ import { GLOBAL_SCORE_WEIGHTS } from "@/types/audit";
 import { SCORING_VERSION } from "@/lib/scoring/constants";
 import { loadAuditBlocs } from "@/lib/audit/load-blocs";
 import { buildEnrichment, formatSourcesCitation } from "@/lib/scoring/external-mapping";
+import { verifyUserOrApiKey } from "@/lib/auth/user-or-api-key";
 
 export const maxDuration = 60;
 
 /**
  * POST /api/audit-direct/finalize
  * Step 7: Aggregate scores + generate action plan + save everything + cleanup
+ * Auth : cookie user OU X-MCVA-Import-Key
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  const auth = await verifyUserOrApiKey(request, "audit-import");
+  if (!auth.ok) return NextResponse.json({ error: auth.reason || "Non authentifié" }, { status: 401 });
 
   const body = await request.json();
   const { auditId, seoData, geoData, competitors, siteAuditData, quality: rawQuality = "standard" } = body;

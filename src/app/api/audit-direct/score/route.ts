@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { scoreOneDimension, scoreOneCiteDimension } from "@/lib/scoring/scorer";
 import { mockScoreOneDimension, mockScoreOneCiteDimension } from "@/lib/scoring/mock-scorer";
 import { SCORING_VERSION } from "@/lib/scoring/constants";
+import { verifyUserOrApiKey } from "@/lib/auth/user-or-api-key";
 import type { QualityLevel } from "@/types/audit";
 
 export const maxDuration = 60;
@@ -11,11 +12,11 @@ export const maxDuration = 60;
  * POST /api/audit-direct/score
  * Step 2/3/4: Score a batch of dimensions (max 4 at a time)
  * Saves items to DB incrementally.
+ * Auth : cookie user OU X-MCVA-Import-Key (scope audit-import)
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  const auth = await verifyUserOrApiKey(request, "audit-import");
+  if (!auth.ok) return NextResponse.json({ error: auth.reason || "Non authentifié" }, { status: 401 });
 
   const body = await request.json();
   const { auditId, dimensions, framework, quality: rawQuality = "standard" } = body as {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { createSeoProvider } from "@/lib/providers/seo/seo-provider";
 import { createGeoProvider } from "@/lib/providers/geo/geo-provider";
 import { crawlUrl, checkRobotsTxt } from "@/lib/siteaudit/crawler";
@@ -10,18 +10,18 @@ import { generateRecommendations } from "@/lib/siteaudit/recommendations";
 import type { AccessibilityViolation } from "@/lib/siteaudit/types";
 import type { QualityLevel } from "@/types/audit";
 import { mockGeoData } from "@/lib/scoring/mock-scorer";
+import { verifyUserOrApiKey } from "@/lib/auth/user-or-api-key";
 
 export const maxDuration = 60;
 
 /**
  * POST /api/audit-direct/data
  * Step 5: Collect SEO + GEO + site audit data (all in parallel)
- * Returns data to the client for finalization.
+ * Auth : cookie user OU X-MCVA-Import-Key
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  const auth = await verifyUserOrApiKey(request, "audit-import");
+  if (!auth.ok) return NextResponse.json({ error: auth.reason || "Non authentifié" }, { status: 401 });
 
   const body = await request.json();
   const { auditId, quality: rawQuality = "standard" } = body;

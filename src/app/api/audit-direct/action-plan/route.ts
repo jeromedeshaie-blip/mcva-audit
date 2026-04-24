@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { generateActionPlan, generateUltraActionPlan } from "@/lib/scoring/action-plan";
+import { verifyUserOrApiKey } from "@/lib/auth/user-or-api-key";
 import type { QualityLevel } from "@/types/audit";
 
 export const maxDuration = 60;
@@ -8,12 +9,11 @@ export const maxDuration = 60;
 /**
  * POST /api/audit-direct/action-plan
  * Generate LLM-based strategic action plan (separated from finalize to fit in 60s).
- * Called AFTER finalize has saved scores and marked audit completed.
+ * Auth : cookie user OU X-MCVA-Import-Key
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  const auth = await verifyUserOrApiKey(request, "audit-import");
+  if (!auth.ok) return NextResponse.json({ error: auth.reason || "Non authentifié" }, { status: 401 });
 
   const body = await request.json();
   const { auditId, quality: rawQuality = "standard" } = body;
