@@ -326,23 +326,66 @@ def load_extraction_prompt() -> str:
 def extract_page_data(html: str, url: str) -> dict[str, Any]:
     """Extract structured data from HTML via Gemma 4 31B.
 
-    ⚠ HTML tronqué à 15k chars : au-delà, Gemma 4 31B + format=json
-    retourne des erreurs 500 (bug Ollama 0.21 avec gros contexte).
-    Prompt system ~3k chars + 15k HTML = ~5k tokens → rentre confortablement
-    dans num_ctx=16384 configuré dans call_ollama.
+    Nettoyage agressif du HTML pour maximiser le signal utile dans les 15k chars :
+    - Garde : title, meta description/robots/canonical/hreflang, OG/Twitter meta,
+              JSON-LD scripts, h1-h6, p, a, img alt, main/article/section content
+    - Supprime : <link rel="preload/stylesheet/...">, scripts JS,
+                 <meta charset/viewport/generator/theme-color>, <style>,
+                 attributs data-*, class, style sur les éléments
     """
-    # Strip scripts JS (pas JSON-LD !) + styles → garde contenu utile + structured data
     soup = BeautifulSoup(html, "html.parser")
+
+    # 1. Drop styles + JS scripts (keep JSON-LD)
     for tag in soup(["style", "noscript"]):
         tag.decompose()
-    # Script : strip UNIQUEMENT ceux qui ne sont pas JSON-LD
     for tag in soup.find_all("script"):
         script_type = tag.get("type", "").lower()
-        if "json" not in script_type:  # keep application/ld+json, drop text/javascript etc.
+        if "json" not in script_type:
             tag.decompose()
-    cleaned = str(soup)
 
-    truncated = cleaned[:15000]  # ← diminué de 40000
+    # 2. Drop useless <link> (preload/prefetch/dns-prefetch/manifest/icon/stylesheet)
+    useless_link_rels = {"preload", "prefetch", "dns-prefetch", "preconnect",
+                         "manifest", "icon", "apple-touch-icon", "mask-icon",
+                         "stylesheet", "modulepreload"}
+    for tag in soup.find_all("link"):
+        rel = tag.get("rel", [])
+        if isinstance(rel, str):
+            rel = [rel]
+        if any(r.lower() in useless_link_rels for r in rel):
+            tag.decompose()
+
+    # 3. Drop meta tags that are noise for SEO audit
+    useless_meta_names = {"charset", "viewport", "generator", "theme-color",
+                          "format-detection", "mobile-web-app-capable",
+                          "apple-mobile-web-app-capable", "apple-mobile-web-app-status-bar-style",
+                          "next-size-adjust", "color-scheme"}
+    for tag in soup.find_all("meta"):
+        name = (tag.get("name") or tag.get("http-equiv") or "").lower()
+        if name in useless_meta_names:
+            tag.decompose()
+        # Drop <meta charset> (attribute-only, no name)
+        if tag.get("charset"):
+            tag.decompose()
+
+    # 4. Strip verbose attributes on remaining tags (class, style, data-*, aria-* except labels)
+    noise_attrs_exact = {"class", "style", "srcset", "sizes", "loading", "decoding",
+                         "fetchpriority", "crossorigin", "referrerpolicy"}
+    for tag in soup.find_all(True):
+        attrs_to_remove = []
+        for attr in list(tag.attrs.keys()):
+            if attr in noise_attrs_exact:
+                attrs_to_remove.append(attr)
+            elif attr.startswith("data-") or attr.startswith("aria-") and attr != "aria-label":
+                attrs_to_remove.append(attr)
+        for a in attrs_to_remove:
+            del tag.attrs[a]
+
+    cleaned = str(soup)
+    # Collapse excessive whitespace
+    import re
+    cleaned = re.sub(r"\s+", " ", cleaned)
+
+    truncated = cleaned[:15000]
     prompt_template = load_extraction_prompt()
     prompt = prompt_template.replace("{html}", truncated)
 
