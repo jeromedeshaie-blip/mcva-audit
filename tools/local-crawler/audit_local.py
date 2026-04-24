@@ -281,12 +281,15 @@ async def crawl_site(root_url: str, max_pages: int) -> list[dict[str, Any]]:
 # Ollama — extraction via Gemma 4 31B
 # ============================================================
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=2, min=2, max=30))
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=2, min=2, max=10))
 def call_ollama(prompt: str) -> str:
     """Appel Ollama avec format=json forcé. Retourne la string JSON brute.
 
     ⚠ Gemma 4 a un mode 'thinking' activé par défaut qui bloque la réponse finale.
     On désactive avec "think": false (Ollama 0.21+).
+
+    ⚠ num_ctx explicite pour éviter qu'Ollama alloue 256K tokens de KV cache par défaut
+    (qui cause des 500 sur Gemma 4 31B avec gros HTML).
     """
     payload = {
         "model": LOCAL_LLM,
@@ -296,25 +299,45 @@ def call_ollama(prompt: str) -> str:
         "think": False,  # ← critique pour Gemma 4, sinon réponse vide
         "options": {
             "temperature": 0.0,  # Reproductibilité
-            "num_predict": 4096,
+            "num_predict": 4096,  # output max (Gemma 4 31B gère largement)
+            "num_ctx": 16384,     # context window raisonnable (vs 256K par défaut)
         },
     }
     response = requests.post(
         f"{OLLAMA_ENDPOINT}/api/generate",
         json=payload,
-        timeout=120,
+        timeout=180,
     )
     response.raise_for_status()
     data = response.json()
-    return data.get("response", "")
+    resp_text = data.get("response", "")
+    if not resp_text:
+        # Log des stats pour debug
+        raise RuntimeError(
+            f"Ollama returned empty response (eval_count={data.get('eval_count', 0)}, "
+            f"done_reason={data.get('done_reason', '?')})"
+        )
+    return resp_text
 
 def load_extraction_prompt() -> str:
     prompt_path = Path(__file__).parent / "prompts" / "extract_page.txt"
     return prompt_path.read_text(encoding="utf-8")
 
 def extract_page_data(html: str, url: str) -> dict[str, Any]:
-    """Extract structured data from HTML via Gemma 4 31B."""
-    truncated = html[:40000]  # keep below context window for speed
+    """Extract structured data from HTML via Gemma 4 31B.
+
+    ⚠ HTML tronqué à 15k chars : au-delà, Gemma 4 31B + format=json
+    retourne des erreurs 500 (bug Ollama 0.21 avec gros contexte).
+    Prompt system ~3k chars + 15k HTML = ~5k tokens → rentre confortablement
+    dans num_ctx=16384 configuré dans call_ollama.
+    """
+    # Strip scripts/styles before truncate → garde le contenu utile
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    cleaned = str(soup)
+
+    truncated = cleaned[:15000]  # ← diminué de 40000
     prompt_template = load_extraction_prompt()
     prompt = prompt_template.replace("{html}", truncated)
 
