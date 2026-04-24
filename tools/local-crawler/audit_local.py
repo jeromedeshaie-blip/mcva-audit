@@ -30,8 +30,10 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import sys
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -319,95 +321,277 @@ def call_ollama(prompt: str) -> str:
         )
     return resp_text
 
-def load_extraction_prompt() -> str:
-    prompt_path = Path(__file__).parent / "prompts" / "extract_page.txt"
+def load_nlp_prompt() -> str:
+    prompt_path = Path(__file__).parent / "prompts" / "extract_nlp.txt"
     return prompt_path.read_text(encoding="utf-8")
 
-def extract_page_data(html: str, url: str) -> dict[str, Any]:
-    """Extract structured data from HTML via Gemma 4 31B.
+# ============================================================
+# Python-deterministic extractors (fast, reliable, no LLM)
+# ============================================================
 
-    Nettoyage agressif du HTML pour maximiser le signal utile dans les 15k chars :
-    - Garde : title, meta description/robots/canonical/hreflang, OG/Twitter meta,
-              JSON-LD scripts, h1-h6, p, a, img alt, main/article/section content
-    - Supprime : <link rel="preload/stylesheet/...">, scripts JS,
-                 <meta charset/viewport/generator/theme-color>, <style>,
-                 attributs data-*, class, style sur les éléments
+def extract_technique(soup: BeautifulSoup) -> dict[str, Any]:
+    """Extract SEO technical metadata — 100% deterministic Python."""
+    def _text(selector: str, attr: Optional[str] = None) -> Optional[str]:
+        el = soup.select_one(selector)
+        if not el: return None
+        val = el.get(attr) if attr else el.get_text(strip=True)
+        return val if val else None
+
+    # h1/h2/h3 text lists (trimmed, deduplicated while preserving order)
+    def _headings(level: str) -> list[str]:
+        seen, out = set(), []
+        for h in soup.find_all(level):
+            txt = h.get_text(" ", strip=True)
+            if txt and txt not in seen and len(txt) < 300:
+                seen.add(txt)
+                out.append(txt)
+            if len(out) >= 20: break
+        return out
+
+    # hreflang <link rel="alternate">
+    hreflang = []
+    for link in soup.find_all("link", rel=lambda x: x and "alternate" in x):
+        lang = link.get("hrefLang") or link.get("hreflang")
+        href = link.get("href")
+        if lang and href:
+            hreflang.append({"lang": lang, "href": href})
+
+    # Canonical
+    canonical_el = soup.find("link", rel="canonical")
+    canonical = canonical_el.get("href") if canonical_el else None
+
+    # Robots meta
+    robots_el = soup.find("meta", attrs={"name": re.compile("^robots$", re.I)})
+    robots_meta = robots_el.get("content") if robots_el else None
+
+    # Viewport
+    viewport = bool(soup.find("meta", attrs={"name": re.compile("^viewport$", re.I)}))
+
+    # Charset (meta charset or meta http-equiv content-type)
+    charset = None
+    charset_el = soup.find("meta", attrs={"charset": True})
+    if charset_el:
+        charset = charset_el.get("charset")
+    else:
+        ct_el = soup.find("meta", attrs={"http-equiv": re.compile("^content-type$", re.I)})
+        if ct_el:
+            m = re.search(r"charset=([^;]+)", ct_el.get("content", ""))
+            if m: charset = m.group(1).strip()
+
+    # Title
+    title_el = soup.find("title")
+    title = title_el.get_text(strip=True) if title_el else None
+
+    # Meta description
+    desc_el = soup.find("meta", attrs={"name": re.compile("^description$", re.I)})
+    meta_description = desc_el.get("content") if desc_el else None
+
+    return {
+        "h1": _headings("h1"),
+        "h2": _headings("h2"),
+        "h3": _headings("h3"),
+        "title": title,
+        "meta_description": meta_description,
+        "canonical": canonical,
+        "hreflang": hreflang,
+        "robots_meta": robots_meta,
+        "viewport": viewport,
+        "charset": charset,
+    }
+
+
+def extract_maillage(soup: BeautifulSoup, page_url: str) -> dict[str, Any]:
+    """Extract internal/external links counts + top 10 each — deterministic."""
+    from urllib.parse import urlparse, urljoin
+    base_domain = urlparse(page_url).netloc.replace("www.", "")
+
+    internal: list[dict] = []
+    external: list[dict] = []
+    internal_count = 0
+    external_count = 0
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if not href or href.startswith("#") or href.startswith("javascript:") or href.startswith("mailto:"):
+            continue
+        anchor = a.get_text(" ", strip=True)[:120] or "(no anchor)"
+        try:
+            absolute = urljoin(page_url, href)
+            parsed = urlparse(absolute)
+            if not parsed.netloc:
+                continue
+            is_internal = parsed.netloc.replace("www.", "") == base_domain
+        except Exception:
+            continue
+
+        if is_internal:
+            internal_count += 1
+            if len(internal) < 10 and anchor != "(no anchor)":
+                internal.append({"anchor": anchor, "target": absolute})
+        else:
+            external_count += 1
+            if len(external) < 10 and anchor != "(no anchor)":
+                external.append({
+                    "anchor": anchor,
+                    "target": absolute,
+                    "domain": parsed.netloc.replace("www.", ""),
+                })
+
+    return {
+        "internal_links_count": internal_count,
+        "external_links_count": external_count,
+        "top_internal_links": internal,
+        "top_external_links": external,
+    }
+
+
+def extract_schema_org(soup: BeautifulSoup) -> dict[str, Any]:
+    """Parse JSON-LD scripts and extract @types — 100% deterministic."""
+    types: list[str] = []
+    raw_scripts: list[str] = []
+
+    for script in soup.find_all("script", type=re.compile(r"application/ld\+json", re.I)):
+        content = script.string or script.get_text() or ""
+        content = content.strip()
+        if not content: continue
+        raw_scripts.append(content[:2000])  # cap each at 2000 chars
+        try:
+            parsed = json.loads(content)
+            _collect_types(parsed, types)
+        except json.JSONDecodeError:
+            pass  # malformed, skip type extraction but keep raw
+        if len(raw_scripts) >= 5: break
+
+    # Dedupe types while preserving order
+    types_dedup = list(dict.fromkeys(types))
+    return {"types_detected": types_dedup[:20], "raw_scripts": raw_scripts}
+
+
+def _collect_types(obj: Any, out: list[str]) -> None:
+    """Walk JSON-LD tree and collect @type values."""
+    if isinstance(obj, dict):
+        t = obj.get("@type")
+        if isinstance(t, str):
+            out.append(t)
+        elif isinstance(t, list):
+            out.extend(s for s in t if isinstance(s, str))
+        for v in obj.values():
+            _collect_types(v, out)
+    elif isinstance(obj, list):
+        for item in obj:
+            _collect_types(item, out)
+
+
+def extract_media(soup: BeautifulSoup) -> dict[str, Any]:
+    """Count images, missing alts, video/audio presence — deterministic."""
+    images = soup.find_all("img")
+    images_count = len(images)
+    images_without_alt = sum(1 for img in images if not img.get("alt", "").strip())
+    has_video = bool(soup.find(["video", "iframe"], src=re.compile(r"youtube|vimeo|wistia", re.I))) \
+                or bool(soup.find("video"))
+    has_audio = bool(soup.find(["audio", "iframe"], src=re.compile(r"soundcloud|spotify", re.I))) \
+                or bool(soup.find("audio"))
+    return {
+        "images_count": images_count,
+        "images_without_alt": images_without_alt,
+        "has_video": has_video,
+        "has_audio": has_audio,
+    }
+
+
+def extract_body_text(soup: BeautifulSoup) -> str:
+    """Extract clean body text for LLM NLP analysis."""
+    body = soup.find("body") or soup
+    # Remove noise tags
+    for tag in body(["style", "script", "noscript", "nav", "footer", "header",
+                     "aside", "form", "button", "svg"]):
+        tag.decompose()
+    text = body.get_text(" ", strip=True)
+    # Collapse whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+# ============================================================
+# Hybrid extraction: Python deterministic + Gemma NLP
+# ============================================================
+
+def extract_page_data(html: str, url: str) -> dict[str, Any]:
+    """Hybrid extraction :
+    - technique, maillage, schema_org, media → Python BS4 (déterministe, 0ms)
+    - geo, semantique → Gemma 4 31B NLP (texte body uniquement, ~1-2k chars)
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1. Drop styles + JS scripts (keep JSON-LD)
-    for tag in soup(["style", "noscript"]):
-        tag.decompose()
-    for tag in soup.find_all("script"):
-        script_type = tag.get("type", "").lower()
-        if "json" not in script_type:
-            tag.decompose()
+    # 1. Deterministic extraction (Python, instant)
+    technique = extract_technique(soup)
+    maillage = extract_maillage(soup, url)
+    schema_org = extract_schema_org(soup)
+    media = extract_media(soup)
 
-    # 2. Drop useless <link> (preload/prefetch/dns-prefetch/manifest/icon/stylesheet)
-    useless_link_rels = {"preload", "prefetch", "dns-prefetch", "preconnect",
-                         "manifest", "icon", "apple-touch-icon", "mask-icon",
-                         "stylesheet", "modulepreload"}
-    for tag in soup.find_all("link"):
-        rel = tag.get("rel", [])
-        if isinstance(rel, str):
-            rel = [rel]
-        if any(r.lower() in useless_link_rels for r in rel):
-            tag.decompose()
+    # 2. Body text for LLM NLP analysis (small prompt, fast inference)
+    body_text = extract_body_text(soup)
+    body_truncated = body_text[:8000]  # ~2-3k tokens, plenty for NLP
 
-    # 3. Drop meta tags that are noise for SEO audit
-    useless_meta_names = {"charset", "viewport", "generator", "theme-color",
-                          "format-detection", "mobile-web-app-capable",
-                          "apple-mobile-web-app-capable", "apple-mobile-web-app-status-bar-style",
-                          "next-size-adjust", "color-scheme"}
-    for tag in soup.find_all("meta"):
-        # Protect against already-decomposed tags (attrs becomes None)
-        if tag.attrs is None:
-            continue
-        name = (tag.get("name") or tag.get("http-equiv") or "").lower()
-        has_charset_attr = bool(tag.get("charset"))
-        if name in useless_meta_names or has_charset_attr:
-            tag.decompose()
+    # Build minimal prompt for Gemma
+    meta_info_parts = []
+    if technique["robots_meta"]:
+        meta_info_parts.append(f"robots={technique['robots_meta']}")
+    if technique["canonical"]:
+        meta_info_parts.append(f"canonical={technique['canonical']}")
 
-    # 4. Strip verbose attributes on remaining tags (class, style, data-*, aria-* except labels)
-    noise_attrs_exact = {"class", "style", "srcset", "sizes", "loading", "decoding",
-                         "fetchpriority", "crossorigin", "referrerpolicy"}
-    for tag in soup.find_all(True):
-        if tag.attrs is None:
-            continue
-        attrs_to_remove = []
-        for attr in list(tag.attrs.keys()):
-            if attr in noise_attrs_exact:
-                attrs_to_remove.append(attr)
-            elif attr.startswith("data-") or (attr.startswith("aria-") and attr != "aria-label"):
-                attrs_to_remove.append(attr)
-        for a in attrs_to_remove:
-            del tag.attrs[a]
+    prompt = load_nlp_prompt() \
+        .replace("{title}", technique["title"] or "(none)") \
+        .replace("{meta_description}", technique["meta_description"] or "(none)") \
+        .replace("{meta_info}", "; ".join(meta_info_parts) or "(none)") \
+        .replace("{content}", body_truncated)
 
-    cleaned = str(soup)
-    # Collapse excessive whitespace
-    import re
-    cleaned = re.sub(r"\s+", " ", cleaned)
-
-    truncated = cleaned[:15000]
-    prompt_template = load_extraction_prompt()
-    prompt = prompt_template.replace("{html}", truncated)
-
-    raw_json = call_ollama(prompt)
-
-    # Ollama with format=json sometimes wraps in markdown — clean defensively
-    raw_json = raw_json.strip()
-    if raw_json.startswith("```"):
-        raw_json = raw_json.split("```")[1] if "```" in raw_json else raw_json
-        if raw_json.startswith("json"):
-            raw_json = raw_json[4:]
-
+    # 3. Gemma NLP
     try:
-        return json.loads(raw_json)
-    except json.JSONDecodeError as e:
-        console.print(f"[red]⚠ Gemma returned invalid JSON for {url}: {e}[/red]")
-        console.print(f"[dim]Raw: {raw_json[:500]}[/dim]")
-        # Return minimal fallback structure
-        return build_empty_extraction()
+        raw_json = call_ollama(prompt)
+        raw_json = raw_json.strip()
+        if raw_json.startswith("```"):
+            raw_json = raw_json.split("```")[1] if "```" in raw_json else raw_json
+            if raw_json.startswith("json"):
+                raw_json = raw_json[4:]
+        nlp_data = json.loads(raw_json)
+        geo = nlp_data.get("geo", {})
+        semantique = nlp_data.get("semantique", {})
+    except (json.JSONDecodeError, RuntimeError, Exception) as e:
+        console.print(f"[yellow]⚠ Gemma NLP échec pour {url}: {type(e).__name__}: {str(e)[:150]}[/yellow]")
+        # Python fallback : count words at least
+        words = re.findall(r"\b\w{3,}\b", body_text.lower())
+        freq = Counter(words)
+        FR_STOP = {"les", "des", "une", "que", "pour", "avec", "sur", "est", "dans",
+                   "par", "vos", "nos", "qui", "tout", "plus", "faire", "sont", "pas"}
+        top_words = [{"word": w, "count": c} for w, c in freq.most_common(30)
+                     if w not in FR_STOP and not w.isdigit()][:15]
+        geo = {"adresses": [], "villes": [], "codes_postaux": [], "telephones": [],
+               "emails": [], "google_maps_embed": False, "gbp_mentioned": False}
+        semantique = {
+            "entites_nommees": [],
+            "mots_cles_frequents": top_words,
+            "flesch_score": None,
+            "mots_total": len(words),
+            "lang_detected": "fr",
+        }
+
+    # Merge all sections
+    return {
+        "technique": technique,
+        "maillage": maillage,
+        "geo": geo,
+        "semantique": _ensure_mots_total(semantique, body_text),
+        "schema_org": schema_org,
+        "media": media,
+    }
+
+
+def _ensure_mots_total(sem: dict, body_text: str) -> dict:
+    """Always fill mots_total via Python count (more reliable than LLM)."""
+    words = re.findall(r"\b\w{3,}\b", body_text)
+    sem["mots_total"] = len(words)
+    return sem
 
 def build_empty_extraction() -> dict[str, Any]:
     return {
