@@ -45,6 +45,9 @@ CITE_BATCHES = [
     (["T", "E"], "CITE T,E"),
 ]
 
+# Themes complémentaires pour audit ultra (5 thèmes)
+ULTRA_THEMES = ["perf", "a11y", "tech", "contenu", "rgesn"]
+
 
 def post(path: str, body: dict, label: str, timeout: int = 70) -> dict:
     """POST avec retry simple + logging rich."""
@@ -83,6 +86,8 @@ def main() -> None:
                         choices=["eco", "standard", "premium", "ultra", "dryrun"])
     parser.add_argument("--skip-data", action="store_true",
                         help="Skip l'étape /data (si déjà scrapé via import local)")
+    parser.add_argument("--ultra", action="store_true",
+                        help="Audit ultra : ajoute les 5 thèmes (perf/a11y/tech/contenu/rgesn)")
     args = parser.parse_args()
 
     if not API_KEY:
@@ -127,6 +132,19 @@ def main() -> None:
             console.print(f"[red]✗ {label}: {res.get('error')}[/red]")
             sys.exit(3)
         console.print(f"  ✓ itemCount={res.get('itemCount', 0)}, {time.time() - t0:.1f}s")
+
+    # --- 7b. ULTRA : 5 thèmes complémentaires (perf, a11y, tech, contenu, rgesn) ---
+    if args.ultra:
+        for theme in ULTRA_THEMES:
+            console.print(f"\n[cyan]→[/cyan] Theme {theme}")
+            t0 = time.time()
+            res = post("/api/audit-direct/score-theme",
+                       {"auditId": audit_id, "theme": theme, "quality": quality},
+                       f"theme/{theme}", timeout=90)
+            if "error" in res:
+                console.print(f"[yellow]⚠ {theme}: {res.get('error')} — skip mais on continue[/yellow]")
+            else:
+                console.print(f"  ✓ itemCount={res.get('itemCount', 0)}, {time.time() - t0:.1f}s")
 
     # --- 8. Finalize ---
     console.print("\n[cyan]→[/cyan] /finalize (aggregate + save)")
