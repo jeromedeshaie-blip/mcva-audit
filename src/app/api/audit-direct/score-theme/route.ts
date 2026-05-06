@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { scoreThemeDimension, getThemeDimensions } from "@/lib/scoring/theme-scorer";
 import { mockScoreThemeDimension, mockGetThemeDimensions } from "@/lib/scoring/mock-scorer";
 import { SCORING_VERSION } from "@/lib/scoring/constants";
+import { verifyUserOrApiKey } from "@/lib/auth/user-or-api-key";
 import type { QualityLevel } from "@/types/audit";
 
 export const maxDuration = 60;
@@ -10,12 +11,11 @@ export const maxDuration = 60;
 /**
  * POST /api/audit-direct/score-theme
  * Score dimensions for a new theme (perf, a11y, rgesn, tech, contenu).
- * Scores all dimensions of the theme in one call.
+ * Auth : cookie user OU X-MCVA-Import-Key.
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  const auth = await verifyUserOrApiKey(request, "audit-import");
+  if (!auth.ok) return NextResponse.json({ error: auth.reason || "Non authentifié" }, { status: 401 });
 
   const body = await request.json();
   const { auditId, theme, quality: rawQuality = "standard", mode: rawMode } = body as {
