@@ -1,5 +1,6 @@
 // src/lib/llm-providers.ts
-// Interface unifiée pour interroger les 4 LLMs du Score GEO™
+// Interface unifiée pour interroger les 5 LLMs du Score GEO™ (REF-2026-016)
+// ChatGPT, Claude, Perplexity, Gemini, Mistral
 
 export interface LLMResponse {
   provider: string;
@@ -50,6 +51,13 @@ const PROVIDERS: ProviderConfig[] = [
     model: "gemini-2.5-pro",
     apiKey: process.env.GEMINI_API_KEY!,
     endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
+  },
+  {
+    name: "mistral",
+    // Mistral Large 2 — meilleur modèle européen, requis par REF-2026-016 (Cahier MCVA n°1)
+    model: "mistral-large-latest",
+    apiKey: process.env.MISTRAL_API_KEY!,
+    endpoint: "https://api.mistral.ai/v1/chat/completions",
   },
 ];
 
@@ -194,6 +202,42 @@ async function callGemini(
   };
 }
 
+async function callMistral(
+  config: ProviderConfig,
+  query: string
+): Promise<LLMResponse> {
+  // Mistral Large 2 (mistral-large-latest) — 5e LLM REF-2026-016
+  // API compatible OpenAI : same /chat/completions schema
+  const start = Date.now();
+  const res = await fetch(config.endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [{ role: "user", content: query }],
+      max_tokens: 1500,
+      temperature: 0.3,
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Mistral error: ${JSON.stringify(data)}`);
+
+  const usage = data.usage || {};
+  return {
+    provider: config.name,
+    model: config.model,
+    query,
+    response: data.choices?.[0]?.message?.content || "",
+    tokensUsed: (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+    latencyMs: Date.now() - start,
+    costUsd: estimateCost("mistral", usage.prompt_tokens, usage.completion_tokens),
+  };
+}
+
 // ----- Estimation des coûts (prix approx. avril 2026) -----
 
 function estimateCost(
@@ -206,6 +250,7 @@ function estimateCost(
     anthropic: { input: 3 / 1e6, output: 15 / 1e6 },      // Claude Sonnet 4.5
     perplexity: { input: 3 / 1e6, output: 15 / 1e6 },     // Sonar Pro
     gemini: { input: 1.25 / 1e6, output: 10 / 1e6 },      // Gemini 2.5 Pro
+    mistral: { input: 2 / 1e6, output: 6 / 1e6 },         // Mistral Large 2 (mistral.ai pricing)
   };
   const rate = rates[provider] || { input: 0, output: 0 };
   return inputTokens * rate.input + outputTokens * rate.output;
@@ -221,6 +266,7 @@ const CALLERS: Record<
   anthropic: callAnthropic,
   perplexity: callPerplexity,
   gemini: callGemini,
+  mistral: callMistral,
 };
 
 /**

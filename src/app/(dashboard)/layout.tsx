@@ -9,7 +9,9 @@ const NAV_ITEMS = [
   { href: "/audit-ultra/new", label: "Audit Ultra" },
   { href: "/audit-local", label: "Import Local" },
   { href: "/benchmarks", label: "Benchmarks" },
-  { href: "/llmwatch", label: "LLM Watch" },
+  // "Score GEO Live" (anciennement "LLM Watch") — mesure automatique LLM-as-judge,
+  // distincte du "Score GEO™" propriétaire (codage humain selon REF-2026-016).
+  { href: "/llmwatch", label: "Score GEO Live" },
   { href: "/classements", label: "Classements" },
   { href: "/settings/api-keys", label: "Clés API" },
   { href: "/settings/integrations", label: "Intégrations" },
